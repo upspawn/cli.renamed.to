@@ -1,0 +1,22 @@
+{
+  "name": "renamed-to",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "bootstrap": "pnpm install",
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "release": "changeset publish",
+    "version-packages": "changeset version && pnpm install --lockfile-only"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.7",
+    "@types/node": "^20.12.7",
+    "eslint": "^9.0.0",
+    "prettier": "^3.2.5",
+    "turbo": "^1.13.0",
+    "typescript": "^5.4.5"
+  }
+}
