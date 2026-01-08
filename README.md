@@ -1,15 +1,15 @@
 # renamed.to CLI
 
-A modern CLI tool for AI-powered file renaming using the renamed.to service.
+A modern CLI tool for AI-powered file renaming, document extraction, and PDF splitting using the [renamed.to](https://renamed.to) service.
 
 ## Features
 
-- 🤖 AI-powered filename suggestions
-- 🔐 Multiple authentication methods (API tokens + OAuth device flow)
-- 📁 Batch file processing
-- ⚡ Fast uploads with progress feedback
-- 🛡️ Secure token storage
-- 🔄 Automatic token refresh
+- **AI-Powered Renaming** - Intelligently rename files based on content analysis
+- **Document Extraction** - Extract structured data from invoices, receipts, contracts
+- **PDF Splitting** - Split multi-page PDFs using AI or rule-based methods
+- **OAuth Device Flow** - Simple authentication without secrets
+- **Batch Processing** - Process multiple files at once
+- **Secure Token Storage** - Credentials stored safely with automatic refresh
 
 ## Installation
 
@@ -17,68 +17,47 @@ A modern CLI tool for AI-powered file renaming using the renamed.to service.
 npm install -g @renamed-to/cli
 ```
 
-Or with yarn:
+Or with pnpm:
 
 ```bash
-yarn global add @renamed-to/cli
+pnpm add -g @renamed-to/cli
 ```
 
 ## Quick Start
 
 1. **Authenticate** with your renamed.to account:
    ```bash
-   renamed auth login
+   renamed auth device
    ```
+   This opens your browser to complete authentication.
 
-2. **Rename files** using AI suggestions:
+2. **Rename files** using AI:
    ```bash
-   renamed rename photo.jpg document.pdf
+   renamed rename invoice.pdf receipt.jpg
    ```
 
-3. **Apply suggestions automatically**:
+3. **Extract data** from documents:
    ```bash
-   renamed rename --apply *.jpg
+   renamed extract invoice.pdf --schema invoice
    ```
 
-## Authentication
-
-### API Token (Recommended)
-
-```bash
-renamed auth login --token your-api-token-here
-```
-
-### Interactive Login
-
-```bash
-renamed auth login
-```
-
-### OAuth Device Flow
-
-```bash
-renamed auth device --client-id your-client-id
-```
-
-### Environment Variables
-
-Set these for automated workflows:
-
-```bash
-export RENAMED_CLIENT_ID=your-client-id
-export RENAMED_CLIENT_SECRET=your-client-secret
-```
+4. **Split PDFs** intelligently:
+   ```bash
+   renamed pdf-split multi-doc.pdf --wait
+   ```
 
 ## Commands
 
 ### Authentication
 
 ```bash
-renamed auth login [options]    # Store API token
-renamed auth logout            # Remove stored credentials
-renamed auth whoami            # Show current user
-renamed auth device [options]  # OAuth device authorization
+renamed auth device           # OAuth device flow (recommended)
+renamed auth login --token X  # Use API token
+renamed auth logout           # Remove stored credentials
+renamed auth whoami           # Show current user
 ```
+
+The device flow uses a built-in public client ID, so no configuration needed.
 
 ### File Renaming
 
@@ -86,63 +65,109 @@ renamed auth device [options]  # OAuth device authorization
 renamed rename <files...> [options]
 ```
 
-Options:
-- `-a, --apply`: Automatically apply suggested filenames
-- Files up to 25MB supported
+| Option | Description |
+|--------|-------------|
+| `-a, --apply` | Automatically apply suggested names |
 
-## Examples
-
-**Single file suggestion:**
+**Examples:**
 ```bash
+# Get suggestions
 renamed rename screenshot.png
-# Output: screenshot.png → product-mockup-design.png
+# Output: screenshot.png → 2024-01-15_product-mockup.png
+
+# Apply automatically
+renamed rename --apply *.pdf
+
+# Batch process
+renamed rename ~/Downloads/*.jpg
 ```
 
-**Batch processing:**
+### Document Extraction
+
 ```bash
-renamed rename *.jpg *.png
+renamed extract <file> [options]
 ```
 
-**Apply all suggestions:**
+| Option | Description |
+|--------|-------------|
+| `-s, --schema <type>` | Schema: invoice, receipt, contract, resume, custom |
+| `-f, --fields <list>` | Comma-separated fields for custom schema |
+| `-o, --output <format>` | Output: json (default), table, csv |
+
+**Examples:**
 ```bash
-renamed rename --apply ~/Downloads/*
+# Extract invoice data
+renamed extract invoice.pdf --schema invoice
+
+# Custom fields
+renamed extract doc.pdf --schema custom --fields "name,date,total"
+
+# Output as CSV
+renamed extract receipt.jpg --schema receipt --output csv
 ```
 
-**Check current user:**
+### PDF Splitting
+
 ```bash
-renamed auth whoami
-# ID: user123
-# Email: user@example.com
-# Name: John Doe
+renamed pdf-split <file> [options]
 ```
+
+| Option | Description |
+|--------|-------------|
+| `-m, --mode <mode>` | smart (AI), every-n-pages, by-bookmarks |
+| `-i, --instructions <text>` | AI instructions for smart mode |
+| `-n, --pages-per-split <n>` | Pages per split (for every-n-pages) |
+| `-o, --output-dir <dir>` | Output directory (default: current) |
+| `-w, --wait` | Wait for completion and download files |
+
+**Examples:**
+```bash
+# AI-powered splitting
+renamed pdf-split merged.pdf --wait
+
+# Split by invoice numbers
+renamed pdf-split invoices.pdf -i "Split by invoice number" --wait
+
+# Fixed page intervals
+renamed pdf-split book.pdf --mode every-n-pages -n 10 --wait
+
+# Custom output directory
+renamed pdf-split doc.pdf --wait -o ./split-output
+```
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `RENAMED_API_TOKEN` | API token for authentication |
+| `RENAMED_CLIENT_ID` | Custom OAuth client ID |
+| `RENAMED_CLIENT_SECRET` | OAuth client secret (confidential clients) |
+
+## Supported File Types
+
+- **Documents**: PDF
+- **Images**: JPG, JPEG, PNG, TIFF
+
+Maximum file size: 100MB for PDF split, 25MB for other operations.
 
 ## Development
 
-This is a monorepo using pnpm workspaces and Turbo.
-
 ```bash
-# Install dependencies
+# Clone and install
+git clone https://github.com/upspawn/cli.renamed.to.git
+cd cli.renamed.to
 pnpm install
 
-# Build all packages
+# Build
 pnpm build
 
 # Run tests
 pnpm test
 
-# Development mode
-pnpm dev
-
-# Lint code
-pnpm lint
+# Run with coverage
+pnpm test -- --coverage
 ```
-
-### Project Structure
-
-- `packages/renamed-cli/` - Main CLI application
-- `apps/` - Additional applications (if any)
-- `tools/` - Development tools
 
 ## License
 
-See individual package licenses.
+MIT
