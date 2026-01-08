@@ -1,5 +1,11 @@
 # @renamed-to/cli
 
+## 1.1.0
+
+### Minor Changes
+
+- 1b82599: Improved CLI UX with better error messages and documentation-style help output. Added ports/adapters pattern for better testability. Updated all dependencies to latest versions.
+
 ## 1.0.1
 
 ### Patch Changes
