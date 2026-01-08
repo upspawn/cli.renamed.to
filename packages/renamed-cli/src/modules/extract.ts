@@ -324,12 +324,51 @@ export function registerExtractCommands(program: Command, api: ApiClient): void 
   program
     .command("extract")
     .description("Extract structured data from PDF documents")
-    .argument("<file>", "PDF file to extract data from")
+    .argument("<file>", "PDF file to extract data from (max 25MB)")
     .option("-s, --schema <json>", "Inline JSON schema defining fields to extract")
     .option("-f, --schema-file <path>", "Path to JSON file containing extraction schema")
     .option("-p, --parser-id <id>", "UUID of a saved parser template")
     .option("-i, --instructions <text>", "Document-level context for AI extraction")
     .option("-o, --output <format>", "Output format: json or table", "table")
+    .addHelpText(
+      "after",
+      `
+${chalk.bold.cyan("Extraction Modes:")}
+  ${chalk.yellow("Discovery")}      No schema - AI auto-detects fields
+  ${chalk.yellow("Schema")}         Define exact fields via --schema or --schema-file
+  ${chalk.yellow("Parser")}         Use saved template via --parser-id
+
+${chalk.bold.cyan("Schema Format:")}
+  ${chalk.gray("{")}
+  ${chalk.gray('  "fields": [')}
+  ${chalk.gray('    { "name": "invoice_number", "type": "string" },')}
+  ${chalk.gray('    { "name": "total", "type": "currency" },')}
+  ${chalk.gray('    { "name": "due_date", "type": "date" }')}
+  ${chalk.gray("  ]")}
+  ${chalk.gray("}")}
+
+  ${chalk.bold("Field types:")} string, number, date, currency, boolean
+
+${chalk.bold.cyan("Examples:")}
+  renamed extract invoice.pdf
+      ${chalk.gray("Auto-discover and extract all fields")}
+
+  renamed extract invoice.pdf -o json
+      ${chalk.gray("Output as JSON for scripting/piping")}
+
+  renamed extract invoice.pdf -s '{"fields":[{"name":"total","type":"currency"}]}'
+      ${chalk.gray("Extract specific fields with inline schema")}
+
+  renamed extract invoice.pdf -f schema.json
+      ${chalk.gray("Use schema from file")}
+
+  renamed extract invoice.pdf -i "This is a German invoice"
+      ${chalk.gray("Provide context to improve extraction accuracy")}
+
+  renamed extract invoice.pdf -p abc123-def456
+      ${chalk.gray("Use saved parser template")}
+`
+    )
     .action(async (file: string, options: ExtractOptions) => {
       const outputFormat = options.output === "json" ? "json" : "table";
       const spinner = ora(`Extracting data from ${basename(file)}`).start();

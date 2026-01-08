@@ -49,6 +49,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@opentui/core": "^0.1.69",
     "chalk": "^5.3.0",
     "chokidar": "^5.0.0",
     "cli-table3": "^0.6.3",

@@ -1,6 +1,14 @@
 import { readFileSync } from "fs";
 import { extname, basename } from "path";
 import Conf from "conf";
+import {
+  notAuthenticated,
+  tokenExpired,
+  refreshFailed,
+  networkOffline,
+  networkTimeout,
+  fromHttpStatus,
+} from "./errors/catalog.js";
 
 // Map file extensions to MIME types
 const MIME_TYPES: Record<string, string> = {
@@ -117,7 +125,7 @@ export function createApiClient({
 
     const tokens = tokenStore.getTokens();
     if (!tokens.accessToken) {
-      throw new Error("No credentials stored. Run `renamed auth login` or `renamed auth device`.");
+      throw notAuthenticated();
     }
 
     if (tokens.expiresAt && tokens.expiresAt > Date.now() + 30_000) {
@@ -128,7 +136,7 @@ export function createApiClient({
     }
 
     if (!tokens.refreshToken) {
-      throw new Error("Stored access token expired and no refresh token is available.");
+      throw tokenExpired();
     }
 
     await refreshWith(tokens.refreshToken);
@@ -140,7 +148,7 @@ export function createApiClient({
   }
 
   async function refreshWith(refreshToken: string) {
-    if (!clientId) throw new Error("RENAMED_CLIENT_ID is required to refresh tokens.");
+    if (!clientId) throw refreshFailed("RENAMED_CLIENT_ID is required to refresh tokens.");
 
     const body = {
       grant_type: "refresh_token",
@@ -174,18 +182,26 @@ export function createApiClient({
   }
 
   async function fetchJson(url: string, body: unknown) {
-    const res = await fetchImpl(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
+    let res: Response;
+    try {
+      res = await fetchImpl(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+    } catch (error) {
+      // Network error
+      if (error instanceof TypeError && error.message.includes("fetch")) {
+        throw networkOffline();
+      }
+      throw error;
+    }
 
     const text = await res.text();
     const data = text ? JSON.parse(text) : {};
 
     if (!res.ok) {
-      const message = data.error_description ?? data.error ?? res.statusText;
-      throw new Error(`OAuth error (${res.status}): ${message}`);
+      throw fromHttpStatus(res.status, res.statusText, data);
     }
 
     return data;
@@ -196,7 +212,7 @@ export function createApiClient({
     const token = context.token;
     const scheme = context.scheme;
 
-    if (!token) throw new Error("No access token available.");
+    if (!token) throw notAuthenticated();
 
     const headers = new Headers(init.headers as HeadersInit | undefined);
     headers.set("Content-Type", headers.get("Content-Type") ?? "application/json");
@@ -210,24 +226,32 @@ export function createApiClient({
       url = path.startsWith("/") ? `${baseUrl}${path}` : `${baseUrl}/${path}`;
     }
 
-    const response = await fetchImpl(url, {
-      ...init,
-      headers
-    });
+    let response: Response;
+    try {
+      response = await fetchImpl(url, {
+        ...init,
+        headers
+      });
+    } catch (error) {
+      // Network error
+      if (error instanceof TypeError && error.message.includes("fetch")) {
+        throw networkOffline();
+      }
+      if (error instanceof Error && error.name === "AbortError") {
+        throw networkTimeout();
+      }
+      throw error;
+    }
 
     const text = await response.text();
     if (!response.ok) {
-      let payload: any = text;
+      let payload: unknown = text;
       try {
         payload = text ? JSON.parse(text) : {};
       } catch {
         /* ignore parse error */
       }
-      throw new Error(
-        `API request failed (${response.status} ${response.statusText}): ${
-          typeof payload === "string" ? payload : JSON.stringify(payload)
-        }`
-      );
+      throw fromHttpStatus(response.status, response.statusText, payload);
     }
 
     return (text ? JSON.parse(text) : {}) as T;
@@ -238,7 +262,7 @@ export function createApiClient({
     const token = context.token;
     const scheme = context.scheme;
 
-    if (!token) throw new Error("No access token available.");
+    if (!token) throw notAuthenticated();
 
     const fileBuffer = readFileSync(filePath);
     const fileName = basename(filePath);
@@ -257,27 +281,34 @@ export function createApiClient({
       url = path.startsWith("/") ? `${baseUrl}${path}` : `${baseUrl}/${path}`;
     }
 
-    const response = await fetchImpl(url, {
-      method: "POST",
-      headers: {
-        Authorization: `${scheme} ${token}`
-      },
-      body: formData
-    });
+    let response: Response;
+    try {
+      response = await fetchImpl(url, {
+        method: "POST",
+        headers: {
+          Authorization: `${scheme} ${token}`
+        },
+        body: formData
+      });
+    } catch (error) {
+      if (error instanceof TypeError && error.message.includes("fetch")) {
+        throw networkOffline();
+      }
+      if (error instanceof Error && error.name === "AbortError") {
+        throw networkTimeout();
+      }
+      throw error;
+    }
 
     const text = await response.text();
     if (!response.ok) {
-      let payload: any = text;
+      let payload: unknown = text;
       try {
         payload = text ? JSON.parse(text) : {};
       } catch {
         /* ignore parse error */
       }
-      throw new Error(
-        `API request failed (${response.status} ${response.statusText}): ${
-          typeof payload === "string" ? payload : JSON.stringify(payload)
-        }`
-      );
+      throw fromHttpStatus(response.status, response.statusText, payload);
     }
 
     return (text ? JSON.parse(text) : {}) as T;
@@ -293,7 +324,7 @@ export function createApiClient({
     const token = context.token;
     const scheme = context.scheme;
 
-    if (!token) throw new Error("No access token available.");
+    if (!token) throw notAuthenticated();
 
     const fileBuffer = readFileSync(filePath);
     const fileName = basename(filePath);
@@ -316,27 +347,34 @@ export function createApiClient({
       url = path.startsWith("/") ? `${baseUrl}${path}` : `${baseUrl}/${path}`;
     }
 
-    const response = await fetchImpl(url, {
-      method: "POST",
-      headers: {
-        Authorization: `${scheme} ${token}`
-      },
-      body: formData
-    });
+    let response: Response;
+    try {
+      response = await fetchImpl(url, {
+        method: "POST",
+        headers: {
+          Authorization: `${scheme} ${token}`
+        },
+        body: formData
+      });
+    } catch (error) {
+      if (error instanceof TypeError && error.message.includes("fetch")) {
+        throw networkOffline();
+      }
+      if (error instanceof Error && error.name === "AbortError") {
+        throw networkTimeout();
+      }
+      throw error;
+    }
 
     const text = await response.text();
     if (!response.ok) {
-      let payload: any = text;
+      let payload: unknown = text;
       try {
         payload = text ? JSON.parse(text) : {};
       } catch {
         /* ignore parse error */
       }
-      throw new Error(
-        `API request failed (${response.status} ${response.statusText}): ${
-          typeof payload === "string" ? payload : JSON.stringify(payload)
-        }`
-      );
+      throw fromHttpStatus(response.status, response.statusText, payload);
     }
 
     return (text ? JSON.parse(text) : {}) as T;
@@ -361,7 +399,7 @@ export function createApiClient({
     },
     async refresh() {
       const tokens = tokenStore.getTokens();
-      if (!tokens.refreshToken) throw new Error("No refresh token available.");
+      if (!tokens.refreshToken) throw tokenExpired();
       await refreshWith(tokens.refreshToken);
     },
     storeOAuthTokens(payload: OAuthTokenPayload) {

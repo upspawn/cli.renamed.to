@@ -22,15 +22,29 @@ vi.mock("fs/promises", () => ({
   rename: vi.fn()
 }));
 
-// Mock chalk
-vi.mock("chalk", () => ({
-  default: {
-    red: (s: string) => s,
-    green: (s: string) => s,
-    cyan: (s: string) => s,
-    gray: (s: string) => s,
-  }
-}));
+// Mock chalk with full API including chained methods
+vi.mock("chalk", () => {
+  const identity = (s: string) => s;
+  const createChained = () => Object.assign(identity, {
+    bold: identity,
+    dim: identity,
+    underline: identity,
+  });
+  const red = Object.assign(identity, { bold: identity });
+  const blue = Object.assign(identity, { underline: identity });
+  return {
+    default: {
+      red,
+      green: identity,
+      cyan: identity,
+      gray: identity,
+      yellow: identity,
+      dim: identity,
+      blue,
+      bold: Object.assign(identity, { cyan: identity, yellow: identity }),
+    }
+  };
+});
 
 import { renameFiles } from "./rename.js";
 import type { ApiClient } from "../lib/api-client.js";
@@ -124,7 +138,7 @@ describe("rename module", () => {
       await renameFiles(api, ["./directory"], {});
 
       expect(errorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("is not a file")
+        expect.stringContaining("is a directory")
       );
       expect(api.uploadFile).not.toHaveBeenCalled();
 
@@ -143,7 +157,7 @@ describe("rename module", () => {
       await renameFiles(api, ["./large.pdf"], {});
 
       expect(errorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("exceeds 25MB limit")
+        expect.stringContaining("too large")
       );
       expect(api.uploadFile).not.toHaveBeenCalled();
 
@@ -161,7 +175,7 @@ describe("rename module", () => {
       await renameFiles(api, ["./missing.pdf"], {});
 
       expect(errorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Cannot access file")
+        expect.stringContaining("Can't find")
       );
       expect(api.uploadFile).not.toHaveBeenCalled();
 
@@ -294,7 +308,7 @@ describe("rename module", () => {
       await renameFiles(api, ["./missing.pdf", "./file2.pdf"], {});
 
       expect(errorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Cannot access file")
+        expect.stringContaining("Can't find")
       );
       expect(api.uploadFile).toHaveBeenCalledTimes(1);
       expect(logSpy).toHaveBeenCalledWith(

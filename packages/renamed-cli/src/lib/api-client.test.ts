@@ -72,9 +72,7 @@ describe("createApiClient", () => {
       const store = new MemoryStore({});
       const client = createApiClient({ tokenStore: store });
 
-      await expect(client.get("/test")).rejects.toThrow(
-        "No credentials stored. Run `renamed auth login` or `renamed auth device`."
-      );
+      await expect(client.get("/test")).rejects.toThrow("You need to log in first");
     });
 
     it("throws error when access token expired and no refresh token", async () => {
@@ -86,9 +84,7 @@ describe("createApiClient", () => {
 
       const client = createApiClient({ tokenStore: store });
 
-      await expect(client.get("/test")).rejects.toThrow(
-        "Stored access token expired and no refresh token is available."
-      );
+      await expect(client.get("/test")).rejects.toThrow("Your session has expired");
     });
 
     it("uses valid non-expired token without refresh", async () => {
@@ -166,9 +162,7 @@ describe("createApiClient", () => {
         tokenStore: store
       });
 
-      await expect(client.get("/test")).rejects.toThrow(
-        "RENAMED_CLIENT_ID is required to refresh tokens."
-      );
+      await expect(client.get("/test")).rejects.toThrow("Couldn't refresh your session");
     });
 
     it("clears tokens on clearToken call", () => {
@@ -261,9 +255,7 @@ describe("createApiClient", () => {
       const client = createApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
       client.setLegacyToken("token");
 
-      await expect(client.get("/test")).rejects.toThrow(
-        /API request failed \(400 Bad Request\)/
-      );
+      await expect(client.get("/test")).rejects.toThrow("The request couldn't be processed");
     });
 
     it("throws error on non-OK response with plain text error", async () => {
@@ -277,9 +269,7 @@ describe("createApiClient", () => {
       const client = createApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
       client.setLegacyToken("token");
 
-      await expect(client.get("/test")).rejects.toThrow(
-        /API request failed \(500 Internal Server Error\)/
-      );
+      await expect(client.get("/test")).rejects.toThrow("Something went wrong on our end");
     });
 
     it("throws OAuth error on refresh failure", async () => {
@@ -305,9 +295,8 @@ describe("createApiClient", () => {
         fetchImpl: fetchImpl as unknown as typeof fetch
       });
 
-      await expect(client.get("/test")).rejects.toThrow(
-        /OAuth error \(401\): Refresh token expired/
-      );
+      // 401 on OAuth token endpoint is treated as "not authenticated"
+      await expect(client.get("/test")).rejects.toThrow("You need to log in first");
     });
   });
 
@@ -376,8 +365,9 @@ describe("createApiClient", () => {
       const client = createApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
       client.setLegacyToken("token");
 
+      // 413 is mapped to a generic API error with the error message
       await expect(client.uploadFile("/upload", "/big-file.pdf")).rejects.toThrow(
-        /API request failed \(413 Payload Too Large\)/
+        /Request failed|File too large/
       );
     });
   });
@@ -422,7 +412,7 @@ describe("createApiClient", () => {
 
       const client = createApiClient({ tokenStore: store });
 
-      await expect(client.refresh()).rejects.toThrow("No refresh token available.");
+      await expect(client.refresh()).rejects.toThrow("Your session has expired");
     });
 
     it("refresh method updates tokens", async () => {

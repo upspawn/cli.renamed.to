@@ -258,7 +258,7 @@ export function registerPdfSplitCommands(
   program
     .command("pdf-split")
     .description("Split PDF documents using AI or rule-based methods")
-    .argument("<file>", "PDF file to split")
+    .argument("<file>", "PDF file to split (max 100MB)")
     .option(
       "-m, --mode <mode>",
       "Split mode: smart (AI), every-n-pages, or by-bookmarks",
@@ -277,6 +277,41 @@ export function registerPdfSplitCommands(
       "-w, --wait",
       "Wait for job completion and download files",
       false
+    )
+    .addHelpText(
+      "after",
+      `
+${chalk.bold.cyan("Split Modes (--mode, -m):")}
+  ${chalk.yellow("smart")}           AI analyzes content to find logical split points
+                  ${chalk.gray("Best for: mixed documents, batched scans")}
+  ${chalk.yellow("every-n-pages")}   Split at fixed page intervals (requires -n)
+                  ${chalk.gray("Best for: uniform documents like forms")}
+  ${chalk.yellow("by-bookmarks")}    Split at PDF bookmark boundaries
+                  ${chalk.gray("Best for: books, manuals with chapters")}
+
+${chalk.bold.cyan("Workflow:")}
+  Without ${chalk.yellow("--wait")}: Returns job ID immediately (async processing)
+  With ${chalk.yellow("--wait")}:    Polls until complete, then downloads files
+
+${chalk.bold.cyan("Examples:")}
+  renamed pdf-split scanned-batch.pdf --wait
+      ${chalk.gray("AI identifies document boundaries and splits")}
+
+  renamed pdf-split invoices.pdf -i "Split by invoice number" --wait
+      ${chalk.gray("Guide AI to split at each new invoice")}
+
+  renamed pdf-split book.pdf -m by-bookmarks --wait
+      ${chalk.gray("Split at chapter boundaries")}
+
+  renamed pdf-split forms.pdf -m every-n-pages -n 2 --wait
+      ${chalk.gray("Split every 2 pages (e.g., 2-page forms)")}
+
+  renamed pdf-split doc.pdf --wait -o ./split-output
+      ${chalk.gray("Save all split files to a specific directory")}
+
+  renamed pdf-split large.pdf
+      ${chalk.gray("Submit job and get ID (check status manually)")}
+`
     )
     .action(async (file: string, options: PdfSplitOptions) => {
       const spinner = ora(`Submitting ${basename(file)} for splitting`).start();

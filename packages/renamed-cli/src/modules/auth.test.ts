@@ -13,14 +13,27 @@ vi.mock("ora", () => ({
   })
 }));
 
-// Mock chalk
-vi.mock("chalk", () => ({
-  default: {
-    red: (s: string) => s,
-    green: (s: string) => s,
-    cyan: (s: string) => s,
-  }
-}));
+// Mock chalk with full API including chained methods
+vi.mock("chalk", () => {
+  const identity = (s: string) => s;
+  const boldMock = Object.assign(identity, {
+    cyan: identity,
+    yellow: identity,
+    green: identity,
+    red: identity,
+    gray: identity,
+  });
+  return {
+    default: {
+      red: identity,
+      green: identity,
+      cyan: identity,
+      yellow: identity,
+      gray: identity,
+      bold: boldMock,
+    }
+  };
+});
 
 // Mock device-flow
 vi.mock("./device-flow.js", () => ({

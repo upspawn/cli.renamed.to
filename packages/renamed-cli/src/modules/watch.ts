@@ -340,6 +340,51 @@ export function registerWatchCommands(program: Command, api: ApiClient): void {
     .option("-n, --dry-run", "Preview actions without moving files", false)
     .option("--concurrency <n>", "Number of files to process in parallel")
     .option("-c, --config <path>", "Path to configuration file")
+    .addHelpText(
+      "after",
+      `
+${chalk.bold.cyan("How It Works:")}
+  1. Watches directory for new/changed files matching patterns
+  2. Sends each file to AI for renaming suggestions
+  3. Moves files to output directory with AI-suggested names
+  4. Failed files go to --failed-dir (default: .failed/)
+
+${chalk.bold.cyan("File Patterns:")}
+  Default: ${chalk.yellow("*.pdf *.jpg *.jpeg *.png *.tiff")}
+  Override with ${chalk.yellow("-p")} to process specific types only
+
+${chalk.bold.cyan("Configuration File:")}
+  YAML file with persistent settings:
+  ${chalk.gray("patterns: ['*.pdf', '*.jpg']")}
+  ${chalk.gray("concurrency: 3")}
+  ${chalk.gray("debounceMs: 1000")}
+  ${chalk.gray("logLevel: info")}
+
+${chalk.bold.cyan("Examples:")}
+  renamed watch ~/Downloads -o ~/Documents
+      ${chalk.gray("Watch Downloads, organize into Documents")}
+
+  renamed watch ~/incoming -p "*.pdf" "*.jpg"
+      ${chalk.gray("Only process PDFs and JPGs")}
+
+  renamed watch ~/inbox --dry-run
+      ${chalk.gray("Preview what would happen without moving files")}
+
+  renamed watch ~/inbox --concurrency 5
+      ${chalk.gray("Process up to 5 files in parallel")}
+
+  renamed watch ~/inbox -c ~/.renamed/watch.yaml
+      ${chalk.gray("Use configuration file for settings")}
+
+  renamed watch ~/scans -o ~/Documents -f ~/failed
+      ${chalk.gray("Custom output and failed directories")}
+
+${chalk.bold.cyan("Tips:")}
+  • Use ${chalk.yellow("--dry-run")} first to preview behavior
+  • Press ${chalk.yellow("Ctrl+C")} to stop gracefully (waits for active jobs)
+  • Check ${chalk.yellow(".failed/")} directory for problematic files
+`
+    )
     .action(async (directory: string, options: WatchOptions) => {
       // Load configuration
       const { config, sources } = loadConfig(options.config);
