@@ -31,8 +31,13 @@
     "renamed": "dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsup",

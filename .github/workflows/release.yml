@@ -52,7 +52,8 @@ jobs:
           version: pnpm version-packages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
+          NPM_CONFIG_PROVENANCE: "true"
+          NPM_CONFIG_ACCESS: "public"
 
       - name: Send a notification if a publish happens
         if: steps.changesets.outputs.published == 'true'
