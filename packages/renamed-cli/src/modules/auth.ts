@@ -47,7 +47,7 @@ export function registerAuthCommands(program: Command, api: ApiClient): void {
     .action(async () => {
       const spinner = ora("Fetching profile").start();
       try {
-        const profile = await api.get<{ id: string; email?: string; name?: string }>("/users/me");
+        const profile = await api.get<{ id: string; email?: string; name?: string }>("/user");
         spinner.stop();
         console.log(chalk.cyan(`ID: ${profile.id}`));
         if (profile.email) console.log(chalk.cyan(`Email: ${profile.email}`));
@@ -59,12 +59,15 @@ export function registerAuthCommands(program: Command, api: ApiClient): void {
       }
     });
 
+  // Default client ID for the official renamed.to CLI (public client - no secret needed)
+  const DEFAULT_CLIENT_ID = "a1ba13513768aa666a5280e7be8836b6";
+
   auth
     .command("device")
     .description("Authenticate using OAuth device authorization")
-    .option("--client-id <id>", "OAuth client ID", process.env.RENAMED_CLIENT_ID)
+    .option("--client-id <id>", "OAuth client ID", process.env.RENAMED_CLIENT_ID ?? DEFAULT_CLIENT_ID)
     .option("--client-secret <secret>", "OAuth client secret", process.env.RENAMED_CLIENT_SECRET)
-    .option("--base-url <url>", "OAuth base URL", "https://renamed.to")
+    .option("--base-url <url>", "OAuth base URL", "https://www.renamed.to")
     .option("--scope <scope>", "Requested scope", "read write upload process")
     .option("--no-open", "Do not automatically open a browser")
     .action(async (options) => {

@@ -1,20 +1,43 @@
 {
   "name": "@renamed-to/cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "CLI tool for AI-powered file renaming, PDF extraction, and document splitting",
   "private": false,
   "type": "module",
+  "license": "MIT",
+  "author": "Renamed.to",
+  "homepage": "https://renamed.to",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/upspawn/cli.renamed.to.git"
+  },
+  "bugs": {
+    "url": "https://github.com/upspawn/cli.renamed.to/issues"
+  },
+  "keywords": [
+    "cli",
+    "rename",
+    "pdf",
+    "ai",
+    "ocr",
+    "extract",
+    "split",
+    "document"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "bin": {
     "renamed": "dist/index.js"
   },
   "files": [
-    "dist",
-    "node_modules"
+    "dist"
   ],
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint",
     "test": "vitest run"
   },
   "dependencies": {
@@ -22,16 +45,18 @@
     "cli-table3": "^0.6.3",
     "commander": "^12.0.0",
     "conf": "^13.0.1",
-    "form-data": "^4.0.4",
-    "node-fetch": "^3.3.2",
     "open": "^10.1.0",
     "ora": "^7.0.1",
     "prompts": "^2.4.2"
   },
   "devDependencies": {
     "@types/cli-table": "^0.3.4",
+    "@types/prompts": "^2.4.9",
+    "@vitest/coverage-v8": "1.6.0",
+    "eslint": "^9.0.0",
     "tsup": "^8.0.1",
     "typescript": "^5.4.5",
+    "typescript-eslint": "^8.0.0",
     "vitest": "^1.4.0"
   }
 }

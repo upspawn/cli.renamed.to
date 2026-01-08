@@ -68,8 +68,11 @@ describe("device flow", () => {
       interval: 1
     });
 
+    // Attach rejection handler before advancing timers to prevent unhandled rejection
+    const expectation = expect(promise).rejects.toThrow(/denied/);
+
     await vi.advanceTimersByTimeAsync(1000);
 
-    await expect(promise).rejects.toThrow(/denied/);
+    await expectation;
   });
 });

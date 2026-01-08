@@ -1,8 +1,21 @@
-import type { RequestInit } from "node-fetch";
-import fetch, { Headers } from "node-fetch";
-import FormData from "form-data";
 import { readFileSync } from "fs";
+import { extname, basename } from "path";
 import Conf from "conf";
+
+// Map file extensions to MIME types
+const MIME_TYPES: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".tiff": "image/tiff",
+  ".tif": "image/tiff",
+};
+
+function getMimeType(filePath: string): string {
+  const ext = extname(filePath).toLowerCase();
+  return MIME_TYPES[ext] ?? "application/octet-stream";
+}
 
 export interface StoredTokens {
   accessToken?: string;
@@ -50,7 +63,7 @@ export interface ApiClientOptions {
   clientId?: string;
   clientSecret?: string;
   tokenStore?: TokenStore;
-  fetchImpl?: typeof fetch;
+  fetchImpl?: typeof globalThis.fetch;
 }
 
 export interface OAuthTokenPayload {
@@ -61,25 +74,41 @@ export interface OAuthTokenPayload {
   expires_in?: number;
 }
 
+export interface MultipartField {
+  name: string;
+  value: string | number | boolean;
+}
+
 export interface ApiClient {
   get<T>(path: string, init?: RequestInit): Promise<T>;
   post<T>(path: string, body: unknown, init?: RequestInit): Promise<T>;
   patch<T>(path: string, body: unknown, init?: RequestInit): Promise<T>;
   delete<T>(path: string, init?: RequestInit): Promise<T>;
   uploadFile<T>(path: string, filePath: string, fieldName?: string): Promise<T>;
+  uploadFileWithFields<T>(
+    path: string,
+    filePath: string,
+    fields: MultipartField[],
+    fieldName?: string
+  ): Promise<T>;
   setLegacyToken(token: string, scheme?: string): void;
   clearToken(): void;
   refresh(): Promise<void>;
   storeOAuthTokens(payload: OAuthTokenPayload): void;
 }
 
+// Helper to check if a path is an absolute URL
+function isAbsoluteUrl(path: string): boolean {
+  return path.startsWith("http://") || path.startsWith("https://");
+}
+
 export function createApiClient({
-  baseUrl = "https://api.renamed.to/v1",
-  oauthBaseUrl = "https://renamed.to",
+  baseUrl = "https://www.renamed.to/api/v1",
+  oauthBaseUrl = "https://www.renamed.to",
   clientId = process.env.RENAMED_CLIENT_ID,
   clientSecret = process.env.RENAMED_CLIENT_SECRET,
   tokenStore = new ConfTokenStore(),
-  fetchImpl = fetch
+  fetchImpl = globalThis.fetch
 }: ApiClientOptions = {}): ApiClient {
   let legacyToken: { token?: string; scheme: string } = { scheme: "Bearer" };
 
@@ -125,13 +154,23 @@ export function createApiClient({
   }
 
   function persistTokens(payload: OAuthTokenPayload) {
-    tokenStore.setTokens({
+    const tokens: StoredTokens = {
       accessToken: payload.access_token,
-      refreshToken: payload.refresh_token,
-      tokenType: payload.token_type ?? "Bearer",
-      scope: payload.scope,
-      expiresAt: payload.expires_in ? Date.now() + payload.expires_in * 1000 : undefined
-    });
+      tokenType: payload.token_type ?? "Bearer"
+    };
+
+    // Only set optional fields if they have values (conf doesn't allow undefined)
+    if (payload.refresh_token) {
+      tokens.refreshToken = payload.refresh_token;
+    }
+    if (payload.scope) {
+      tokens.scope = payload.scope;
+    }
+    if (payload.expires_in) {
+      tokens.expiresAt = Date.now() + payload.expires_in * 1000;
+    }
+
+    tokenStore.setTokens(tokens);
   }
 
   async function fetchJson(url: string, body: unknown) {
@@ -159,11 +198,19 @@ export function createApiClient({
 
     if (!token) throw new Error("No access token available.");
 
-    const headers = new Headers(init.headers ?? {});
+    const headers = new Headers(init.headers as HeadersInit | undefined);
     headers.set("Content-Type", headers.get("Content-Type") ?? "application/json");
     headers.set("Authorization", `${scheme} ${token}`);
 
-    const response = await fetchImpl(new URL(path, baseUrl), {
+    // Handle absolute URLs (e.g., statusUrl from API responses) or construct relative URLs
+    let url: string;
+    if (isAbsoluteUrl(path)) {
+      url = path;
+    } else {
+      url = path.startsWith("/") ? `${baseUrl}${path}` : `${baseUrl}/${path}`;
+    }
+
+    const response = await fetchImpl(url, {
       ...init,
       headers
     });
@@ -193,21 +240,87 @@ export function createApiClient({
 
     if (!token) throw new Error("No access token available.");
 
-    const formData = new FormData();
     const fileBuffer = readFileSync(filePath);
-    const fileName = filePath.split('/').pop() || 'file';
+    const fileName = basename(filePath);
+    const mimeType = getMimeType(filePath);
 
-    formData.append(fieldName, fileBuffer, {
-      filename: fileName,
-      contentType: 'application/octet-stream' // Let the server determine the content type
+    // Use native FormData and Blob (Node 18+)
+    const formData = new FormData();
+    const blob = new Blob([fileBuffer], { type: mimeType });
+    formData.append(fieldName, blob, fileName);
+
+    // Handle absolute URLs or construct relative URLs
+    let url: string;
+    if (isAbsoluteUrl(path)) {
+      url = path;
+    } else {
+      url = path.startsWith("/") ? `${baseUrl}${path}` : `${baseUrl}/${path}`;
+    }
+
+    const response = await fetchImpl(url, {
+      method: "POST",
+      headers: {
+        Authorization: `${scheme} ${token}`
+      },
+      body: formData
     });
 
-    const headers = new Headers();
-    headers.set("Authorization", `${scheme} ${token}`);
+    const text = await response.text();
+    if (!response.ok) {
+      let payload: any = text;
+      try {
+        payload = text ? JSON.parse(text) : {};
+      } catch {
+        /* ignore parse error */
+      }
+      throw new Error(
+        `API request failed (${response.status} ${response.statusText}): ${
+          typeof payload === "string" ? payload : JSON.stringify(payload)
+        }`
+      );
+    }
 
-    const response = await fetchImpl(new URL(path, baseUrl), {
+    return (text ? JSON.parse(text) : {}) as T;
+  }
+
+  async function uploadFileWithFieldsRequest<T>(
+    path: string,
+    filePath: string,
+    fields: MultipartField[],
+    fieldName = "file"
+  ): Promise<T> {
+    const context = await ensureAccessToken();
+    const token = context.token;
+    const scheme = context.scheme;
+
+    if (!token) throw new Error("No access token available.");
+
+    const fileBuffer = readFileSync(filePath);
+    const fileName = basename(filePath);
+    const mimeType = getMimeType(filePath);
+
+    // Use native FormData and Blob (Node 18+)
+    const formData = new FormData();
+    const blob = new Blob([fileBuffer], { type: mimeType });
+    formData.append(fieldName, blob, fileName);
+
+    for (const field of fields) {
+      formData.append(field.name, String(field.value));
+    }
+
+    // Handle absolute URLs or construct relative URLs
+    let url: string;
+    if (isAbsoluteUrl(path)) {
+      url = path;
+    } else {
+      url = path.startsWith("/") ? `${baseUrl}${path}` : `${baseUrl}/${path}`;
+    }
+
+    const response = await fetchImpl(url, {
       method: "POST",
-      headers,
+      headers: {
+        Authorization: `${scheme} ${token}`
+      },
       body: formData
     });
 
@@ -237,6 +350,7 @@ export function createApiClient({
       request(path, { ...init, method: "PATCH", body: JSON.stringify(body) }),
     delete: (path, init) => request(path, { ...init, method: "DELETE" }),
     uploadFile: uploadFileRequest,
+    uploadFileWithFields: uploadFileWithFieldsRequest,
     setLegacyToken(token, scheme = "Bearer") {
       legacyToken = { token, scheme };
       tokenStore.clearTokens();

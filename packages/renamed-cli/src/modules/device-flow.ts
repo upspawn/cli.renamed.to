@@ -52,15 +52,21 @@ export async function pollForTokens(
   while (Date.now() < deadline) {
     await delay(interval * 1000);
 
+    const tokenBody: Record<string, string> = {
+      grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+      client_id: config.clientId,
+      device_code: device.device_code
+    };
+
+    // Only include client_secret if provided (confidential clients require it)
+    if (config.clientSecret) {
+      tokenBody.client_secret = config.clientSecret;
+    }
+
     const res = await fetch(`${config.baseUrl}/api/oauth/token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-        client_id: config.clientId,
-        client_secret: config.clientSecret,
-        device_code: device.device_code
-      })
+      body: JSON.stringify(tokenBody)
     });
 
     const data = await res.json();

@@ -3,6 +3,8 @@ import pkg from "../package.json" assert { type: "json" };
 import { createApiClient } from "./lib/api-client.js";
 import { registerAuthCommands } from "./modules/auth.js";
 import { registerRenameCommands } from "./modules/rename.js";
+import { registerExtractCommands } from "./modules/extract.js";
+import { registerPdfSplitCommands } from "./modules/pdf-split.js";
 
 export async function main(argv = process.argv): Promise<void> {
   const program = new Command()
@@ -14,6 +16,8 @@ export async function main(argv = process.argv): Promise<void> {
 
   registerAuthCommands(program, api);
   registerRenameCommands(program, api);
+  registerExtractCommands(program, api);
+  registerPdfSplitCommands(program, api);
 
   try {
     await program.parseAsync(argv);
