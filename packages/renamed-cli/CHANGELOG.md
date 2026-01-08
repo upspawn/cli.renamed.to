@@ -1,5 +1,11 @@
 # @renamed-to/cli
 
+## 1.0.1
+
+### Patch Changes
+
+- e2b6e83: Add README to npm package display
+
 ## 1.0.0
 
 ### Major Changes
