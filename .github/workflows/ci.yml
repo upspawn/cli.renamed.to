@@ -32,9 +32,6 @@ jobs:
       - name: Run tests
         run: pnpm test
 
-      - name: Run tests with coverage
-        run: pnpm test -- --coverage
-
   lint:
     runs-on: ubuntu-latest
     steps:
