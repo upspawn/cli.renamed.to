@@ -47,7 +47,7 @@ describe("createApiClient", () => {
           method: "GET"
         })
       );
-      const call = fetchImpl.mock.calls[0];
+      const call = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
       const headers = call[1].headers as Headers;
       expect(headers.get("Authorization")).toBe("Bearer abc123");
     });
@@ -63,7 +63,8 @@ describe("createApiClient", () => {
 
       await client.get("/test");
 
-      const headers = fetchImpl.mock.calls[0][1].headers as Headers;
+      const call = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+      const headers = call[1].headers as Headers;
       expect(headers.get("Authorization")).toBe("Token mytoken");
     });
 

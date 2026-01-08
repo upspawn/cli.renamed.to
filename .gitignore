@@ -2,6 +2,7 @@ node_modules
 .dist
 .temp
 dist
+dist-bin
 .DS_Store
 .vscode
 *.log

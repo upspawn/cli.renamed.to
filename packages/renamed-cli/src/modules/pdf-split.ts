@@ -1,10 +1,13 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import ora from "ora";
-import { statSync, createWriteStream, mkdirSync } from "fs";
-import { Writable } from "stream";
+import { statSync, mkdirSync } from "fs";
 import { basename, join, resolve } from "path";
 import type { ApiClient, MultipartField } from "../lib/api-client.js";
+import type { DownloadService } from "../lib/ports/download.js";
+import type { DelayFn } from "../lib/ports/timer.js";
+import { fetchDownloadService } from "../lib/adapters/fetch-download.js";
+import { realDelay } from "../lib/adapters/real-timers.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -20,7 +23,7 @@ export interface PdfSplitOptions {
   wait?: boolean;
 }
 
-interface SplitDocument {
+export interface SplitDocument {
   filename: string;
   downloadUrl: string;
   pages: number[];
@@ -29,18 +32,27 @@ interface SplitDocument {
 
 type JobStatus = "pending" | "processing" | "completed" | "failed";
 
-interface JobResponse {
+export interface JobResponse {
   jobId: string;
   statusUrl: string;
   status: JobStatus;
 }
 
-interface JobStatusResponse {
+export interface JobStatusResponse {
   jobId: string;
   status: JobStatus;
   documents?: SplitDocument[];
   error?: string;
   progress?: number;
+}
+
+/**
+ * Dependencies for PDF split operations.
+ * All have sensible defaults for production use.
+ */
+export interface PdfSplitDeps {
+  downloadService?: DownloadService;
+  delay?: DelayFn;
 }
 
 // ---------------------------------------------------------------------------
@@ -52,10 +64,10 @@ const POLL_INTERVAL_MS = 2000;
 const MAX_POLL_ATTEMPTS = 300; // 10 minutes max
 
 // ---------------------------------------------------------------------------
-// Validation
+// Validation (Pure Functions)
 // ---------------------------------------------------------------------------
 
-function validateFilePath(filePath: string): void {
+export function validateFilePath(filePath: string): void {
   let stats;
   try {
     stats = statSync(filePath);
@@ -73,11 +85,13 @@ function validateFilePath(filePath: string): void {
   }
 }
 
-function validateOptions(options: PdfSplitOptions): void {
+export function validateOptions(options: PdfSplitOptions): void {
   const mode = options.mode ?? "smart";
 
   if (mode === "every-n-pages" && !options.pagesPerSplit) {
-    throw new Error("--pages-per-split is required when using every-n-pages mode");
+    throw new Error(
+      "--pages-per-split is required when using every-n-pages mode"
+    );
   }
 
   if (options.pagesPerSplit) {
@@ -88,12 +102,14 @@ function validateOptions(options: PdfSplitOptions): void {
   }
 }
 
-function ensureOutputDir(outputDir: string): string {
+export function ensureOutputDir(outputDir: string): string {
   const resolved = resolve(outputDir);
   try {
     mkdirSync(resolved, { recursive: true });
   } catch (error) {
-    throw new Error(`Failed to create output directory: ${(error as Error).message}`);
+    throw new Error(
+      `Failed to create output directory: ${(error as Error).message}`
+    );
   }
   return resolved;
 }
@@ -102,11 +118,13 @@ function ensureOutputDir(outputDir: string): string {
 // Job Polling
 // ---------------------------------------------------------------------------
 
-async function pollJobStatus(
+export async function pollJobStatus(
   api: ApiClient,
   statusUrl: string,
-  spinner: ReturnType<typeof ora>
+  deps: PdfSplitDeps = {},
+  onProgress?: (status: JobStatusResponse) => void
 ): Promise<JobStatusResponse> {
+  const { delay = realDelay } = deps;
   let attempts = 0;
 
   while (attempts < MAX_POLL_ATTEMPTS) {
@@ -122,13 +140,8 @@ async function pollJobStatus(
         throw new Error(response.error ?? "PDF split job failed");
 
       case "processing":
-        if (response.progress != null) {
-          spinner.text = `Processing... ${response.progress}%`;
-        }
-        break;
-
       case "pending":
-        spinner.text = "Waiting in queue...";
+        onProgress?.(response);
         break;
     }
 
@@ -142,56 +155,21 @@ async function pollJobStatus(
 // File Download
 // ---------------------------------------------------------------------------
 
-async function downloadFile(url: string, outputPath: string): Promise<void> {
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    throw new Error(`Failed to download file: ${response.statusText}`);
-  }
-
-  if (!response.body) {
-    throw new Error("No response body");
-  }
-
-  const fileStream = createWriteStream(outputPath);
-
-  // Use native ReadableStream from fetch with Node.js Writable stream
-  await new Promise<void>((resolve, reject) => {
-    const reader = response.body!.getReader();
-    const writable = Writable.toWeb(fileStream);
-    const writableStream = writable as WritableStream<Uint8Array>;
-
-    new ReadableStream({
-      async start(controller) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            controller.close();
-            break;
-          }
-          controller.enqueue(value);
-        }
-      }
-    })
-      .pipeTo(writableStream)
-      .then(resolve)
-      .catch(reject);
-  });
-}
-
-async function downloadSplitDocuments(
+export async function downloadSplitDocuments(
   documents: SplitDocument[],
   outputDir: string,
-  spinner: ReturnType<typeof ora>
+  deps: PdfSplitDeps = {},
+  onProgress?: (index: number, filename: string) => void
 ): Promise<string[]> {
+  const { downloadService = fetchDownloadService } = deps;
   const downloadedPaths: string[] = [];
 
   for (let i = 0; i < documents.length; i++) {
     const doc = documents[i];
-    spinner.text = `Downloading ${i + 1}/${documents.length}: ${doc.filename}`;
+    onProgress?.(i, doc.filename);
 
     const outputPath = join(outputDir, doc.filename);
-    await downloadFile(doc.downloadUrl, outputPath);
+    await downloadService.download(doc.downloadUrl, outputPath);
     downloadedPaths.push(outputPath);
   }
 
@@ -218,42 +196,65 @@ export async function splitPdf(
   }
 
   if (options.pagesPerSplit) {
-    fields.push({ name: "pagesPerSplit", value: parseInt(options.pagesPerSplit, 10) });
+    fields.push({
+      name: "pagesPerSplit",
+      value: parseInt(options.pagesPerSplit, 10),
+    });
   }
 
   return api.uploadFileWithFields<JobResponse>("/pdf-split", filePath, fields);
 }
 
 // ---------------------------------------------------------------------------
-// Output Formatting
+// Output Formatting (Pure Functions)
 // ---------------------------------------------------------------------------
 
-function displayJobInfo(response: JobResponse): void {
-  console.log(chalk.cyan("\nJob submitted:"));
-  console.log(`  Job ID: ${response.jobId}`);
-  console.log(`  Status: ${response.status}`);
-  console.log(`  Status URL: ${response.statusUrl}`);
-  console.log(chalk.gray("\nUse --wait to wait for completion and download files"));
+export function formatJobInfo(response: JobResponse): string[] {
+  return [
+    "",
+    "Job submitted:",
+    `  Job ID: ${response.jobId}`,
+    `  Status: ${response.status}`,
+    `  Status URL: ${response.statusUrl}`,
+    "",
+    "Use --wait to wait for completion and download files",
+  ];
 }
 
-function displayCompletionSummary(documents: SplitDocument[], downloadedPaths: string[]): void {
-  console.log(chalk.cyan("\nSplit complete:"));
-  console.log(`  Documents created: ${documents.length}`);
-  console.log(chalk.bold("\nDownloaded files:"));
+export function formatPageInfo(pages: number[]): string {
+  return pages.length === 1 ? `page ${pages[0]}` : `pages ${pages.join(", ")}`;
+}
+
+export function formatCompletionSummary(
+  documents: SplitDocument[],
+  downloadedPaths: string[]
+): string[] {
+  const lines = [
+    "",
+    "Split complete:",
+    `  Documents created: ${documents.length}`,
+    "",
+    "Downloaded files:",
+  ];
 
   for (let i = 0; i < documents.length; i++) {
     const doc = documents[i];
     const path = downloadedPaths[i];
-    const pageInfo = doc.pages.length === 1 ? `page ${doc.pages[0]}` : `pages ${doc.pages.join(", ")}`;
-    console.log(`  ${chalk.green("+")} ${path} (${pageInfo})`);
+    const pageInfo = formatPageInfo(doc.pages);
+    lines.push(`  + ${path} (${pageInfo})`);
   }
+
+  return lines;
 }
 
 // ---------------------------------------------------------------------------
 // Command Registration
 // ---------------------------------------------------------------------------
 
-export function registerPdfSplitCommands(program: Command, api: ApiClient): void {
+export function registerPdfSplitCommands(
+  program: Command,
+  api: ApiClient
+): void {
   program
     .command("pdf-split")
     .description("Split PDF documents using AI or rule-based methods")
@@ -271,11 +272,7 @@ export function registerPdfSplitCommands(program: Command, api: ApiClient): void
       "-n, --pages-per-split <number>",
       "Pages per split (required for every-n-pages mode)"
     )
-    .option(
-      "-o, --output-dir <dir>",
-      "Directory to save split files",
-      "."
-    )
+    .option("-o, --output-dir <dir>", "Directory to save split files", ".")
     .option(
       "-w, --wait",
       "Wait for job completion and download files",
@@ -289,17 +286,35 @@ export function registerPdfSplitCommands(program: Command, api: ApiClient): void
         spinner.succeed("Job submitted");
 
         if (!options.wait) {
-          displayJobInfo(jobResponse);
+          for (const line of formatJobInfo(jobResponse)) {
+            console.log(line ? chalk.cyan(line) : "");
+          }
           return;
         }
 
         // Wait mode: poll for completion and download files
         spinner.start("Waiting for job completion...");
-        const statusResponse = await pollJobStatus(api, jobResponse.statusUrl, spinner);
+        const statusResponse = await pollJobStatus(
+          api,
+          jobResponse.statusUrl,
+          {},
+          (status) => {
+            if (status.status === "processing" && status.progress != null) {
+              spinner.text = `Processing... ${status.progress}%`;
+            } else if (status.status === "pending") {
+              spinner.text = "Waiting in queue...";
+            }
+          }
+        );
         spinner.succeed("Processing complete");
 
-        if (!statusResponse.documents || statusResponse.documents.length === 0) {
-          console.log(chalk.yellow("No documents were created from the split"));
+        if (
+          !statusResponse.documents ||
+          statusResponse.documents.length === 0
+        ) {
+          console.log(
+            chalk.yellow("No documents were created from the split")
+          );
           return;
         }
 
@@ -308,11 +323,19 @@ export function registerPdfSplitCommands(program: Command, api: ApiClient): void
         const downloadedPaths = await downloadSplitDocuments(
           statusResponse.documents,
           outputDir,
-          spinner
+          {},
+          (i, filename) => {
+            spinner.text = `Downloading ${i + 1}/${statusResponse.documents!.length}: ${filename}`;
+          }
         );
         spinner.succeed("Downloads complete");
 
-        displayCompletionSummary(statusResponse.documents, downloadedPaths);
+        for (const line of formatCompletionSummary(
+          statusResponse.documents,
+          downloadedPaths
+        )) {
+          console.log(line ? chalk.cyan(line) : "");
+        }
       } catch (error) {
         spinner.fail("PDF split failed");
         console.error(chalk.red((error as Error).message));
@@ -320,9 +343,3 @@ export function registerPdfSplitCommands(program: Command, api: ApiClient): void
       }
     });
 }
-
-// ---------------------------------------------------------------------------
-// Utilities
-// ---------------------------------------------------------------------------
-
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

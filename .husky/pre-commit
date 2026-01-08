@@ -1,0 +1,7 @@
+# Run type checking
+echo "🔍 Running type check..."
+pnpm typecheck
+
+# Run tests
+echo "🧪 Running tests..."
+pnpm test

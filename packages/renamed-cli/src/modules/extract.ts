@@ -18,51 +18,69 @@ export interface ExtractOptions {
   output?: "json" | "table";
 }
 
-interface SchemaField {
+export interface SchemaField {
   name: string;
   type: "string" | "number" | "date" | "currency" | "boolean";
   instruction?: string;
 }
 
-interface SchemaTableColumn {
+export interface SchemaTableColumn {
   name: string;
   type: "string" | "number" | "date" | "currency" | "boolean";
   instruction?: string;
 }
 
-interface SchemaTable {
+export interface SchemaTable {
   name: string;
   instruction?: string;
   columns: SchemaTableColumn[];
 }
 
-interface ExtractionSchema {
+export interface ExtractionSchema {
   fields?: SchemaField[];
   tables?: SchemaTable[];
 }
 
-interface ExtractedField {
+export interface ExtractedField {
   name: string;
   value: unknown;
   confidence?: number;
 }
 
-interface ExtractedTableRow {
+export interface ExtractedTableRow {
   [column: string]: unknown;
 }
 
-interface ExtractedTable {
+export interface ExtractedTable {
   name: string;
   rows: ExtractedTableRow[];
 }
 
-interface ExtractResponse {
+export interface ExtractResponse {
   fields?: ExtractedField[];
   tables?: ExtractedTable[];
   metadata?: {
     pageCount?: number;
     processingTimeMs?: number;
   };
+}
+
+/**
+ * Row data for fields table output.
+ */
+export interface FieldRowData {
+  name: string;
+  value: string;
+  confidence: string;
+}
+
+/**
+ * Data structure for table output.
+ */
+export interface TableData {
+  name: string;
+  columns: string[];
+  rows: string[][];
 }
 
 // ---------------------------------------------------------------------------
@@ -72,10 +90,10 @@ interface ExtractResponse {
 const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB
 
 // ---------------------------------------------------------------------------
-// Validation
+// Validation (Pure Functions)
 // ---------------------------------------------------------------------------
 
-function validateFilePath(filePath: string): void {
+export function validateFilePath(filePath: string): void {
   let stats;
   try {
     stats = statSync(filePath);
@@ -93,6 +111,31 @@ function validateFilePath(filePath: string): void {
   }
 }
 
+/**
+ * Parse inline JSON schema string.
+ */
+export function parseInlineSchema(schema: string): ExtractionSchema {
+  try {
+    return JSON.parse(schema) as ExtractionSchema;
+  } catch {
+    throw new Error("Invalid JSON in --schema option");
+  }
+}
+
+/**
+ * Parse schema from file content.
+ */
+export function parseSchemaContent(
+  content: string,
+  filePath: string
+): ExtractionSchema {
+  try {
+    return JSON.parse(content) as ExtractionSchema;
+  } catch (error) {
+    throw new Error(`Failed to parse schema file: ${(error as Error).message}`);
+  }
+}
+
 function parseSchema(options: ExtractOptions): ExtractionSchema | undefined {
   if (options.parserId) {
     // Parser ID takes precedence - schema is on the server
@@ -100,22 +143,18 @@ function parseSchema(options: ExtractOptions): ExtractionSchema | undefined {
   }
 
   if (options.schema) {
-    try {
-      return JSON.parse(options.schema) as ExtractionSchema;
-    } catch {
-      throw new Error("Invalid JSON in --schema option");
-    }
+    return parseInlineSchema(options.schema);
   }
 
   if (options.schemaFile) {
     try {
       const content = readFileSync(options.schemaFile, "utf-8");
-      return JSON.parse(content) as ExtractionSchema;
+      return parseSchemaContent(content, options.schemaFile);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         throw new Error(`Schema file not found: ${options.schemaFile}`);
       }
-      throw new Error(`Failed to parse schema file: ${(error as Error).message}`);
+      throw error;
     }
   }
 
@@ -124,21 +163,92 @@ function parseSchema(options: ExtractOptions): ExtractionSchema | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// Output Formatting
+// Output Formatting (Pure Functions)
 // ---------------------------------------------------------------------------
+
+/**
+ * Format a value for display. Returns "(empty)" for null/undefined,
+ * JSON string for objects, or string representation otherwise.
+ */
+export function formatValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "(empty)";
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+/**
+ * Format confidence as a percentage string.
+ */
+export function formatConfidence(confidence: number | undefined): string {
+  return confidence != null ? `${(confidence * 100).toFixed(0)}%` : "-";
+}
+
+/**
+ * Build field row data for table output.
+ */
+export function buildFieldRow(field: ExtractedField): FieldRowData {
+  return {
+    name: field.name,
+    value: formatValue(field.value),
+    confidence: formatConfidence(field.confidence),
+  };
+}
+
+/**
+ * Build all field rows from extracted fields.
+ */
+export function buildFieldRows(fields: ExtractedField[]): FieldRowData[] {
+  return fields.map(buildFieldRow);
+}
+
+/**
+ * Build table data from an extracted table.
+ */
+export function buildTableData(table: ExtractedTable): TableData {
+  if (table.rows.length === 0) {
+    return { name: table.name, columns: [], rows: [] };
+  }
+
+  const columns = Object.keys(table.rows[0]);
+  const rows = table.rows.map((row) =>
+    columns.map((col) => formatValue(row[col]))
+  );
+
+  return { name: table.name, columns, rows };
+}
+
+/**
+ * Format metadata for display.
+ */
+export function formatMetadata(metadata: ExtractResponse["metadata"]): string[] {
+  if (!metadata) return [];
+
+  const lines: string[] = [];
+  lines.push(`Pages: ${metadata.pageCount ?? "unknown"}`);
+  if (metadata.processingTimeMs) {
+    lines.push(`Processing time: ${metadata.processingTimeMs}ms`);
+  }
+  return lines;
+}
 
 function formatAsTable(response: ExtractResponse): void {
   if (response.fields && response.fields.length > 0) {
     console.log(chalk.bold("\nExtracted Fields:"));
     const fieldsTable = new CliTable3({
       head: [chalk.cyan("Field"), chalk.cyan("Value"), chalk.cyan("Confidence")],
-      colWidths: [25, 45, 12]
+      colWidths: [25, 45, 12],
     });
 
-    for (const field of response.fields) {
-      const value = formatValue(field.value);
-      const confidence = field.confidence != null ? `${(field.confidence * 100).toFixed(0)}%` : "-";
-      fieldsTable.push([field.name, value, confidence]);
+    for (const row of buildFieldRows(response.fields)) {
+      fieldsTable.push([
+        row.name,
+        row.value === "(empty)" ? chalk.gray(row.value) : row.value,
+        row.confidence,
+      ]);
     }
 
     console.log(fieldsTable.toString());
@@ -148,40 +258,31 @@ function formatAsTable(response: ExtractResponse): void {
     for (const table of response.tables) {
       console.log(chalk.bold(`\nTable: ${table.name}`));
 
-      if (table.rows.length === 0) {
+      const tableData = buildTableData(table);
+      if (tableData.rows.length === 0) {
         console.log(chalk.gray("  (no rows)"));
         continue;
       }
 
-      const columns = Object.keys(table.rows[0]);
       const tableOutput = new CliTable3({
-        head: columns.map((c) => chalk.cyan(c))
+        head: tableData.columns.map((c) => chalk.cyan(c)),
       });
 
-      for (const row of table.rows) {
-        tableOutput.push(columns.map((col) => formatValue(row[col])));
+      for (const row of tableData.rows) {
+        tableOutput.push(row);
       }
 
       console.log(tableOutput.toString());
     }
   }
 
-  if (response.metadata) {
-    console.log(chalk.gray(`\nPages: ${response.metadata.pageCount ?? "unknown"}`));
-    if (response.metadata.processingTimeMs) {
-      console.log(chalk.gray(`Processing time: ${response.metadata.processingTimeMs}ms`));
+  const metadataLines = formatMetadata(response.metadata);
+  if (metadataLines.length > 0) {
+    console.log("");
+    for (const line of metadataLines) {
+      console.log(chalk.gray(line));
     }
   }
-}
-
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined) {
-    return chalk.gray("(empty)");
-  }
-  if (typeof value === "object") {
-    return JSON.stringify(value);
-  }
-  return String(value);
 }
 
 function formatAsJson(response: ExtractResponse): void {

@@ -41,9 +41,12 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsup",
+    "build:binaries": "bun run scripts/build-binaries.ts",
     "dev": "tsup --watch",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "npx tsx scripts/e2e-test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "chalk": "^5.3.0",

@@ -1,7 +1,15 @@
 import ora from "ora";
 import chalk from "chalk";
-import open from "open";
-import prompts from "prompts";
+import type { BrowserService } from "../lib/ports/browser.js";
+import type { PromptService } from "../lib/ports/prompt.js";
+import type { DelayFn } from "../lib/ports/timer.js";
+import { systemBrowser } from "../lib/adapters/system-browser.js";
+import { interactivePrompts } from "../lib/adapters/interactive-prompts.js";
+import { realDelay } from "../lib/adapters/real-timers.js";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 interface DeviceCodeResponse {
   device_code: string;
@@ -29,22 +37,84 @@ export interface DeviceAuthConfig {
   openBrowser: boolean;
 }
 
-export async function requestDeviceCode(config: DeviceAuthConfig): Promise<DeviceCodeResponse> {
-  const res = await fetchJson(`${config.baseUrl}/api/oauth/device`, {
-    client_id: config.clientId,
-    scope: config.scope
+/**
+ * Dependencies for device auth flow.
+ * All have sensible defaults for production use.
+ */
+export interface DeviceAuthDeps {
+  fetchImpl?: typeof fetch;
+  browserService?: BrowserService;
+  promptService?: PromptService;
+  delay?: DelayFn;
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+async function fetchJson(
+  url: string,
+  body: unknown,
+  fetchImpl: typeof fetch
+): Promise<Record<string, unknown>> {
+  const res = await fetchImpl(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(
+      (data as { error_description?: string; error?: string }).error_description ??
+        (data as { error?: string }).error ??
+        res.statusText
+    );
+  }
+  return data as Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Request a device code from the authorization server.
+ */
+export async function requestDeviceCode(
+  config: DeviceAuthConfig,
+  deps: DeviceAuthDeps = {}
+): Promise<DeviceCodeResponse> {
+  const { fetchImpl = globalThis.fetch } = deps;
+
+  const res = await fetchJson(
+    `${config.baseUrl}/api/oauth/device`,
+    {
+      client_id: config.clientId,
+      scope: config.scope,
+    },
+    fetchImpl
+  );
 
   return {
-    ...res,
-    interval: res.interval ?? config.pollInterval
+    device_code: res.device_code as string,
+    user_code: res.user_code as string,
+    verification_uri: res.verification_uri as string,
+    verification_uri_complete: res.verification_uri_complete as string,
+    expires_in: res.expires_in as number,
+    interval: (res.interval as number) ?? config.pollInterval,
   };
 }
 
+/**
+ * Poll the token endpoint until authorization is complete.
+ */
 export async function pollForTokens(
   config: DeviceAuthConfig,
-  device: DeviceCodeResponse
+  device: DeviceCodeResponse,
+  deps: DeviceAuthDeps = {}
 ): Promise<TokenResponse> {
+  const { fetchImpl = globalThis.fetch, delay = realDelay } = deps;
+
   const baseInterval = device.interval ?? config.pollInterval;
   let interval = baseInterval;
   const deadline = Date.now() + device.expires_in * 1000;
@@ -55,22 +125,32 @@ export async function pollForTokens(
     const tokenBody: Record<string, string> = {
       grant_type: "urn:ietf:params:oauth:grant-type:device_code",
       client_id: config.clientId,
-      device_code: device.device_code
+      device_code: device.device_code,
     };
 
-    // Only include client_secret if provided (confidential clients require it)
     if (config.clientSecret) {
       tokenBody.client_secret = config.clientSecret;
     }
 
-    const res = await fetch(`${config.baseUrl}/api/oauth/token`, {
+    const res = await fetchImpl(`${config.baseUrl}/api/oauth/token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(tokenBody)
+      body: JSON.stringify(tokenBody),
     });
 
-    const data = await res.json();
-    if (res.ok) return data;
+    const data = (await res.json()) as {
+      error?: string;
+      error_description?: string;
+      access_token?: string;
+      refresh_token?: string;
+      token_type?: string;
+      scope?: string;
+      expires_in?: number;
+    };
+
+    if (res.ok) {
+      return data as TokenResponse;
+    }
 
     switch (data.error) {
       case "authorization_pending":
@@ -90,46 +170,43 @@ export async function pollForTokens(
   throw new Error("Authorization timed out. Please start again.");
 }
 
-export async function runDeviceAuth(config: DeviceAuthConfig) {
+/**
+ * Run the complete device authorization flow.
+ */
+export async function runDeviceAuth(
+  config: DeviceAuthConfig,
+  deps: DeviceAuthDeps = {}
+): Promise<TokenResponse> {
+  const {
+    fetchImpl = globalThis.fetch,
+    browserService = systemBrowser,
+    promptService = interactivePrompts,
+    delay = realDelay,
+  } = deps;
+
   const spinner = ora("Requesting device code").start();
-  const device = await requestDeviceCode(config);
+  const device = await requestDeviceCode(config, { fetchImpl });
   spinner.succeed("Device code issued");
 
   const message = `Visit ${device.verification_uri} and enter code ${device.user_code}`;
   console.log(chalk.cyan(message));
 
   if (config.openBrowser) {
-    await open(device.verification_uri_complete, { wait: false });
+    await browserService.open(device.verification_uri_complete);
   } else {
-    const { launch } = await prompts({
-      type: "confirm",
-      name: "launch",
-      message: "Open the verification URL in your browser?",
-      initial: true
-    });
+    const shouldOpen = await promptService.confirm(
+      "Open the verification URL in your browser?",
+      true
+    );
 
-    if (launch) {
-      await open(device.verification_uri_complete, { wait: false });
+    if (shouldOpen) {
+      await browserService.open(device.verification_uri_complete);
     }
   }
 
   const pollSpinner = ora("Waiting for authorization").start();
-  const tokens = await pollForTokens(config, device);
+  const tokens = await pollForTokens(config, device, { fetchImpl, delay });
   pollSpinner.succeed("Authorization complete");
+
   return tokens;
 }
-
-async function fetchJson(url: string, body: unknown) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error_description ?? data.error ?? res.statusText);
-  }
-  return data;
-}
-
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

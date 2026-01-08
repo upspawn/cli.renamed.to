@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import chokidar from "chokidar";
+import chokidar, { type FSWatcher } from "chokidar";
 import { resolve, extname } from "path";
 import { statSync, existsSync, mkdirSync } from "fs";
 import chalk from "chalk";
@@ -16,12 +16,18 @@ import {
 } from "../lib/queue.js";
 import { processFile, type ProcessFileResult } from "../lib/file-processor.js";
 import { createHealthServer, type HealthServer } from "../lib/health.js";
+import type { FileWatcherFactory } from "../lib/ports/file-watcher.js";
+import type { SignalHandler } from "../lib/ports/signal-handler.js";
+import type { TimerService } from "../lib/ports/timer.js";
+import { chokidarWatcherFactory } from "../lib/adapters/chokidar-watcher.js";
+import { createProcessSignalHandler } from "../lib/adapters/process-signals.js";
+import { realTimerService } from "../lib/adapters/real-timers.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-interface WatchOptions {
+export interface WatchOptions {
   patterns?: string[];
   outputDir?: string;
   failedDir?: string;
@@ -30,13 +36,13 @@ interface WatchOptions {
   config?: string;
 }
 
-interface WatchContext {
+export interface WatchContext {
   api: ApiClient;
   logger: Logger;
   config: ResolvedConfig;
   queue: ProcessingQueue<ProcessFileResult>;
   healthServer: HealthServer | null;
-  watcher: chokidar.FSWatcher | null;
+  watcher: FSWatcher | null;
   pendingFiles: Map<string, NodeJS.Timeout>;
   outputDir: string;
   failedDir: string;
@@ -44,15 +50,26 @@ interface WatchContext {
   isShuttingDown: boolean;
 }
 
+/**
+ * Dependencies for watch operations.
+ * All have sensible defaults for production use.
+ */
+export interface WatchDeps {
+  watcherFactory?: FileWatcherFactory;
+  signalHandler?: SignalHandler;
+  timerService?: TimerService;
+  fileExists?: (path: string) => boolean;
+}
+
 // ---------------------------------------------------------------------------
-// Validation
+// Validation (Pure Functions)
 // ---------------------------------------------------------------------------
 
 /**
  * Validate and create a directory if needed.
  * Returns the resolved absolute path.
  */
-function validateDirectory(path: string, name: string): string {
+export function validateDirectory(path: string, name: string): string {
   const resolved = resolve(path);
 
   if (!existsSync(resolved)) {
@@ -71,7 +88,7 @@ function validateDirectory(path: string, name: string): string {
  * Check if a file matches any of the glob patterns.
  * Supports simple extension-based patterns like *.pdf
  */
-function matchesPatterns(filename: string, patterns: string[]): boolean {
+export function matchesPatterns(filename: string, patterns: string[]): boolean {
   const ext = extname(filename).toLowerCase();
 
   for (const pattern of patterns) {
@@ -87,15 +104,42 @@ function matchesPatterns(filename: string, patterns: string[]): boolean {
   return false;
 }
 
+/**
+ * Parse and validate concurrency option.
+ * Returns number between 1-10 or throws error.
+ */
+export function parseConcurrency(value: string): number {
+  const n = parseInt(value, 10);
+  if (isNaN(n) || n < 1 || n > 10) {
+    throw new Error("Concurrency must be between 1 and 10");
+  }
+  return n;
+}
+
 // ---------------------------------------------------------------------------
 // Core Watch Logic
 // ---------------------------------------------------------------------------
 
 /**
+ * Handler context for file events.
+ */
+export interface FileHandlerContext {
+  config: { patterns: string[]; debounceMs: number };
+  logger: Logger;
+  pendingFiles: Map<string, NodeJS.Timeout>;
+  onFileReady: (filePath: string) => void;
+}
+
+/**
  * Create a handler function for new file events.
  * Implements debouncing to handle batch file drops.
  */
-function createWatchHandler(ctx: WatchContext): (filePath: string) => void {
+export function createFileHandler(
+  ctx: FileHandlerContext,
+  deps: WatchDeps = {}
+): (filePath: string) => void {
+  const { timerService = realTimerService, fileExists = existsSync } = deps;
+
   return (filePath: string) => {
     // Check file pattern
     if (!matchesPatterns(filePath, ctx.config.patterns)) {
@@ -106,51 +150,70 @@ function createWatchHandler(ctx: WatchContext): (filePath: string) => void {
     // Debounce: clear existing timeout for this file
     const existing = ctx.pendingFiles.get(filePath);
     if (existing) {
-      clearTimeout(existing);
+      timerService.clearTimeout(existing);
     }
 
     // Schedule processing after debounce period
-    const timeout = setTimeout(() => {
+    const timeout = timerService.setTimeout(() => {
       ctx.pendingFiles.delete(filePath);
 
       // Verify file still exists (might have been moved/deleted)
-      if (!existsSync(filePath)) {
+      if (!fileExists(filePath)) {
         ctx.logger.debug("File no longer exists, skipping", { filePath });
         return;
       }
 
-      const task: QueueTask<ProcessFileResult> = {
-        id: filePath,
-        execute: async () => {
-          const result = await processFile(
-            ctx.api,
-            filePath,
-            {
-              apply: true,
-              outputDir: ctx.outputDir,
-              failedDir: ctx.failedDir,
-              dryRun: ctx.dryRun,
-            },
-            ctx.logger
-          );
-
-          if (result.success) {
-            ctx.healthServer?.recordSuccess();
-          } else {
-            ctx.healthServer?.recordError();
-          }
-
-          ctx.healthServer?.updateStats(ctx.queue.getStats());
-
-          return result;
-        },
-      };
-
-      ctx.queue.enqueue(task);
+      ctx.onFileReady(filePath);
     }, ctx.config.debounceMs);
 
     ctx.pendingFiles.set(filePath, timeout);
   };
+}
+
+/**
+ * Create the file processing callback for use with createFileHandler.
+ */
+function createFileProcessor(ctx: WatchContext): (filePath: string) => void {
+  return (filePath: string) => {
+    const task: QueueTask<ProcessFileResult> = {
+      id: filePath,
+      execute: async () => {
+        const result = await processFile(
+          ctx.api,
+          filePath,
+          {
+            apply: true,
+            outputDir: ctx.outputDir,
+            failedDir: ctx.failedDir,
+            dryRun: ctx.dryRun,
+          },
+          ctx.logger
+        );
+
+        if (result.success) {
+          ctx.healthServer?.recordSuccess();
+        } else {
+          ctx.healthServer?.recordError();
+        }
+
+        ctx.healthServer?.updateStats(ctx.queue.getStats());
+
+        return result;
+      },
+    };
+
+    ctx.queue.enqueue(task);
+  };
+}
+
+function createWatchHandler(ctx: WatchContext): (filePath: string) => void {
+  const handlerCtx: FileHandlerContext = {
+    config: ctx.config,
+    logger: ctx.logger,
+    pendingFiles: ctx.pendingFiles,
+    onFileReady: createFileProcessor(ctx),
+  };
+  return createFileHandler(handlerCtx);
 }
 
 /**
@@ -189,8 +252,8 @@ async function startWatching(
   ctx.watcher.on("add", handler);
   ctx.watcher.on("change", handler);
 
-  ctx.watcher.on("error", (error) => {
-    ctx.logger.error("Watcher error", { error: error.message });
+  ctx.watcher.on("error", (error: unknown) => {
+    ctx.logger.error("Watcher error", { error: (error as Error).message });
   });
 
   ctx.watcher.on("ready", () => {
@@ -199,10 +262,27 @@ async function startWatching(
 }
 
 /**
+ * Clear all pending debounced files.
+ */
+export function clearPendingFiles(
+  pendingFiles: Map<string, NodeJS.Timeout>,
+  deps: WatchDeps = {}
+): void {
+  const { timerService = realTimerService } = deps;
+  for (const timeout of pendingFiles.values()) {
+    timerService.clearTimeout(timeout);
+  }
+  pendingFiles.clear();
+}
+
+/**
  * Gracefully shutdown the watch process.
  * Drains the queue and stops the health server.
  */
-async function shutdown(ctx: WatchContext): Promise<void> {
+export async function shutdown(
+  ctx: WatchContext,
+  deps: WatchDeps = {}
+): Promise<void> {
   if (ctx.isShuttingDown) return;
   ctx.isShuttingDown = true;
 
@@ -214,10 +294,7 @@ async function shutdown(ctx: WatchContext): Promise<void> {
   }
 
   // Clear pending debounced files
-  for (const timeout of ctx.pendingFiles.values()) {
-    clearTimeout(timeout);
-  }
-  ctx.pendingFiles.clear();
+  clearPendingFiles(ctx.pendingFiles, deps);
 
   // Wait for active tasks to complete
   const stats = ctx.queue.getStats();
@@ -272,13 +349,13 @@ export function registerWatchCommands(program: Command, api: ApiClient): void {
         config.patterns = options.patterns;
       }
       if (options.concurrency) {
-        const n = parseInt(options.concurrency, 10);
-        if (isNaN(n) || n < 1 || n > 10) {
-          console.error(chalk.red("Concurrency must be between 1 and 10"));
+        try {
+          config.concurrency = parseConcurrency(options.concurrency);
+        } catch (error) {
+          console.error(chalk.red((error as Error).message));
           process.exitCode = 1;
           return;
         }
-        config.concurrency = n;
       }
 
       // Create logger
