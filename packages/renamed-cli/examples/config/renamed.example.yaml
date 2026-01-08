@@ -1,0 +1,57 @@
+# renamed.to CLI Configuration
+# Place at ~/.config/renamed/config.yaml (user) or /etc/renamed/config.yaml (system)
+#
+# Configuration precedence (highest to lowest):
+# 1. CLI flags
+# 2. User config (~/.config/renamed/config.yaml)
+# 3. System config (/etc/renamed/config.yaml)
+# 4. Built-in defaults
+
+# Watch mode settings
+watch:
+  # Default file patterns to process
+  patterns:
+    - "*.pdf"
+    - "*.jpg"
+    - "*.jpeg"
+    - "*.png"
+    - "*.tiff"
+    - "*.tif"
+
+  # Default output directory (can be overridden with --output-dir)
+  # outputDir: "/path/to/organized"
+
+  # Default failed directory (can be overridden with --failed-dir)
+  # failedDir: "/path/to/failed"
+
+# Rate limiting and processing
+rateLimit:
+  # Maximum concurrent file processing (1-10)
+  concurrency: 2
+
+  # Debounce delay for batch file drops (ms)
+  # Waits this long after the last file event before processing
+  debounceMs: 1000
+
+  # Number of retry attempts for failed files
+  retryAttempts: 3
+
+  # Base delay between retries (exponential backoff applied)
+  retryDelayMs: 5000
+
+# Health check settings
+health:
+  # Enable Unix socket health endpoint
+  enabled: true
+
+  # Socket path for health checks
+  # Query with: echo "" | nc -U /tmp/renamed-health.sock
+  socketPath: "/tmp/renamed-health.sock"
+
+# Logging configuration
+logging:
+  # Log level: debug, info, warn, error
+  level: info
+
+  # Output JSON logs (recommended for production/systemd)
+  json: false

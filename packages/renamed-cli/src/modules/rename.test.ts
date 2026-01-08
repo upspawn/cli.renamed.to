@@ -68,9 +68,9 @@ describe("rename module", () => {
 
     await renameFiles(api as ApiClient, ["./test.pdf"], { apply: true });
 
-    expect(renameMock).toHaveBeenCalledWith("./test.pdf", "./renamed_test.pdf");
+    expect(renameMock).toHaveBeenCalledWith("./test.pdf", "renamed_test.pdf");
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining("✓ Renamed to: ./renamed_test.pdf")
+      expect.stringContaining("✓ Moved to: renamed_test.pdf")
     );
 
     logSpy.mockRestore();

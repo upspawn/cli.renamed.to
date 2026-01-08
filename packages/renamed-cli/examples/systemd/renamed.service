@@ -1,0 +1,77 @@
+# /etc/systemd/system/renamed.service
+# systemd unit file for renamed.to watch service
+#
+# Installation:
+# 1. Create service user:
+#    sudo useradd --system --no-create-home --shell /usr/sbin/nologin renamed
+#
+# 2. Create directories:
+#    sudo mkdir -p /var/watch/inbox /var/watch/failed /var/organized
+#    sudo chown -R renamed:renamed /var/watch /var/organized
+#
+# 3. Install the CLI:
+#    sudo mkdir -p /opt/renamed
+#    sudo chown renamed:renamed /opt/renamed
+#    cd /opt/renamed && sudo -u renamed npm init -y
+#    sudo -u renamed npm install @renamed-to/cli
+#
+# 4. Configure authentication (one of):
+#    - Set RENAMED_CLIENT_ID in [Service] Environment below
+#    - Run: sudo -u renamed /opt/renamed/node_modules/.bin/renamed auth device
+#
+# 5. Install and enable this service:
+#    sudo cp renamed.service /etc/systemd/system/
+#    sudo systemctl daemon-reload
+#    sudo systemctl enable renamed
+#    sudo systemctl start renamed
+#
+# Logs: journalctl -u renamed -f
+
+[Unit]
+Description=renamed.to File Organization Service
+Documentation=https://renamed.to/docs/cli
+After=network.target
+
+[Service]
+Type=simple
+User=renamed
+Group=renamed
+
+# Working directory (should contain node_modules)
+WorkingDirectory=/opt/renamed
+
+# Main command - adjust paths as needed
+ExecStart=/usr/bin/node /opt/renamed/node_modules/@renamed-to/cli/dist/index.js \
+    watch /var/watch/inbox \
+    --output-dir /var/organized \
+    --failed-dir /var/watch/failed
+
+# Graceful shutdown - finish current file before stopping
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Restart on failure
+Restart=on-failure
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+# Allow write access to specific directories
+ReadWritePaths=/var/watch /var/organized /tmp
+
+# Environment
+Environment=NODE_ENV=production
+# Environment=RENAMED_CLIENT_ID=your-client-id-here
+
+# Logging (goes to journald)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=renamed
+
+[Install]
+WantedBy=multi-user.target

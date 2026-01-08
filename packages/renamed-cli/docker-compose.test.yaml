@@ -1,0 +1,29 @@
+# Docker Compose for testing renamed.to CLI watch mode
+# Usage: docker compose -f docker-compose.test.yaml up --build
+version: "3.8"
+
+services:
+  renamed-cli:
+    build:
+      context: ../..
+      dockerfile: packages/renamed-cli/Dockerfile
+    container_name: renamed-cli-test
+    volumes:
+      # Mount test directories
+      - ./test-data/inbox:/var/watch/inbox
+      - ./test-data/failed:/var/watch/failed
+      - ./test-data/organized:/var/organized
+      # Mount health socket location
+      - /tmp:/tmp
+    environment:
+      - NODE_ENV=development
+      # Note: Set RENAMED_CLIENT_ID for actual API testing
+      # - RENAMED_CLIENT_ID=your-client-id
+    command: >
+      node dist/index.js watch /var/watch/inbox
+      --output-dir /var/organized
+      --failed-dir /var/watch/failed
+      --dry-run
+    # Keep running for testing
+    stdin_open: true
+    tty: true

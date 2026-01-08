@@ -5,10 +5,13 @@ A modern CLI tool for AI-powered file renaming, document extraction, and PDF spl
 ## Features
 
 - **AI-Powered Renaming** - Intelligently rename files based on content analysis
+- **AI Folder Organization** - Files automatically organized into AI-suggested folder structures
 - **Document Extraction** - Extract structured data from invoices, receipts, contracts
 - **PDF Splitting** - Split multi-page PDFs using AI or rule-based methods
+- **Watch Mode** - Auto-process files as they arrive in watched directories
 - **OAuth Device Flow** - Simple authentication without secrets
 - **Batch Processing** - Process multiple files at once
+- **Server Deployment** - Run as a systemd service with health checks
 - **Secure Token Storage** - Credentials stored safely with automatic refresh
 
 ## Installation
@@ -68,6 +71,7 @@ renamed rename <files...> [options]
 | Option | Description |
 |--------|-------------|
 | `-a, --apply` | Automatically apply suggested names |
+| `-o, --output-dir <dir>` | Base directory for organized output (uses AI folder suggestions) |
 
 **Examples:**
 ```bash
@@ -133,6 +137,87 @@ renamed pdf-split book.pdf --mode every-n-pages -n 10 --wait
 
 # Custom output directory
 renamed pdf-split doc.pdf --wait -o ./split-output
+```
+
+### Watch Mode (Server Automation)
+
+Monitor directories and automatically organize files using AI:
+
+```bash
+renamed watch <directory> [options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --patterns <glob...>` | File patterns (default: `*.pdf *.jpg *.png`) |
+| `-o, --output-dir <dir>` | Base output directory for organized files |
+| `-f, --failed-dir <dir>` | Directory for files that fail processing |
+| `-n, --dry-run` | Preview without moving files |
+| `--concurrency <n>` | Parallel processing (1-10, default: 2) |
+| `-c, --config <path>` | Config file path |
+
+**Examples:**
+```bash
+# Watch Downloads folder, organize into ~/Documents/organized
+renamed watch ~/Downloads --output-dir ~/Documents/organized
+
+# Dry run - see what would happen
+renamed watch ~/incoming --output-dir ~/organized --dry-run
+
+# With failed directory
+renamed watch /var/inbox --output-dir /var/organized --failed-dir /var/failed
+```
+
+Files are organized into AI-suggested folder structures:
+```
+~/Documents/organized/
+  invoices/
+    2024/
+      acme-invoice-001.pdf
+  receipts/
+    amazon-order-12345.pdf
+```
+
+### Configuration
+
+Manage CLI settings with YAML config files:
+
+```bash
+renamed config init              # Create user config (~/.config/renamed/)
+renamed config init --global     # Create system config (/etc/renamed/)
+renamed config validate          # Validate config files
+renamed config show              # Display effective configuration
+renamed config path              # Show config file locations
+```
+
+Config file example (`~/.config/renamed/config.yaml`):
+```yaml
+watch:
+  patterns: ["*.pdf", "*.jpg", "*.png"]
+rateLimit:
+  concurrency: 2
+  retryAttempts: 3
+health:
+  enabled: true
+  socketPath: "/tmp/renamed-health.sock"
+logging:
+  level: info
+  json: false
+```
+
+## Server Deployment
+
+For running as a systemd service on Linux servers, see [docs/SERVER-SETUP.md](packages/renamed-cli/docs/SERVER-SETUP.md).
+
+Quick start:
+```bash
+# Install service
+sudo cp examples/systemd/renamed.service /etc/systemd/system/
+sudo systemctl enable renamed
+sudo systemctl start renamed
+
+# Check health
+echo "" | nc -U /tmp/renamed-health.sock
 ```
 
 ## Environment Variables

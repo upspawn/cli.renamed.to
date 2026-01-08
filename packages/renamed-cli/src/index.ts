@@ -5,6 +5,8 @@ import { registerAuthCommands } from "./modules/auth.js";
 import { registerRenameCommands } from "./modules/rename.js";
 import { registerExtractCommands } from "./modules/extract.js";
 import { registerPdfSplitCommands } from "./modules/pdf-split.js";
+import { registerWatchCommands } from "./modules/watch.js";
+import { registerConfigCommands } from "./modules/config-cmd.js";
 
 export async function main(argv = process.argv): Promise<void> {
   const program = new Command()
@@ -18,6 +20,8 @@ export async function main(argv = process.argv): Promise<void> {
   registerRenameCommands(program, api);
   registerExtractCommands(program, api);
   registerPdfSplitCommands(program, api);
+  registerWatchCommands(program, api);
+  registerConfigCommands(program);
 
   try {
     await program.parseAsync(argv);
