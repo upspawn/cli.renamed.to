@@ -26,7 +26,7 @@ vi.mock("node-fetch", () => ({
   default: (...args: unknown[]) => mockFetch(...args)
 }));
 
-import { splitPdf, type PdfSplitOptions } from "./pdf-split.js";
+import { splitPdf } from "./pdf-split.js";
 import type { ApiClient } from "../lib/api-client.js";
 
 describe("pdf-split module", () => {

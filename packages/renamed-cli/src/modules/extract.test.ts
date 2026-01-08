@@ -18,7 +18,7 @@ vi.mock("fs", () => ({
   readFileSync: (...args: unknown[]) => mockReadFileSync(...args)
 }));
 
-import { extractFromFile, type ExtractOptions } from "./extract.js";
+import { extractFromFile } from "./extract.js";
 import type { ApiClient } from "../lib/api-client.js";
 
 describe("extract module", () => {
