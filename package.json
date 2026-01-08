@@ -14,12 +14,12 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.27.7",
-    "@types/node": "^20.12.7",
-    "eslint": "^9.0.0",
+    "@changesets/cli": "^2.29.8",
+    "@types/node": "^25.0.3",
+    "eslint": "^9.39.2",
     "husky": "^9.1.7",
-    "prettier": "^3.2.5",
-    "turbo": "^1.13.0",
-    "typescript": "^5.4.5"
+    "prettier": "^3.7.4",
+    "turbo": "^2.7.3",
+    "typescript": "^5.9.3"
   }
 }
