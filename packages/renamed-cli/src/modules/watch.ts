@@ -22,6 +22,9 @@ import type { TimerService } from "../lib/ports/timer.js";
 import { chokidarWatcherFactory } from "../lib/adapters/chokidar-watcher.js";
 import { createProcessSignalHandler } from "../lib/adapters/process-signals.js";
 import { realTimerService } from "../lib/adapters/real-timers.js";
+import { isJsonMode } from "../lib/cli-context.js";
+import { outputNdjson, type WatchEventJson } from "../lib/json-output.js";
+import { getFileIdentity } from "../lib/file-identity.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,6 +51,7 @@ export interface WatchContext {
   failedDir: string;
   dryRun: boolean;
   isShuttingDown: boolean;
+  jsonMode: boolean;
 }
 
 /**
@@ -198,6 +202,25 @@ function createFileProcessor(ctx: WatchContext): (filePath: string) => void {
 
         ctx.healthServer?.updateStats(ctx.queue.getStats());
 
+        // Emit NDJSON event if in JSON mode
+        if (ctx.jsonMode) {
+          const event: WatchEventJson = {
+            type: result.success ? "file" : "error",
+            timestamp: new Date().toISOString(),
+            data: {
+              file: getFileIdentity(filePath),
+              result: result.success ? {
+                suggestedName: result.suggestedFilename,
+                suggestedFolder: result.suggestedFolderPath,
+                applied: !ctx.dryRun,
+                outputPath: result.destinationPath,
+              } : undefined,
+              error: result.error,
+            },
+          };
+          outputNdjson(event);
+        }
+
         return result;
       },
     };
@@ -258,6 +281,18 @@ async function startWatching(
 
   ctx.watcher.on("ready", () => {
     ctx.logger.info("Watcher ready, monitoring for new files");
+
+    // Emit NDJSON start event
+    if (ctx.jsonMode) {
+      const event: WatchEventJson = {
+        type: "start",
+        timestamp: new Date().toISOString(),
+        data: {
+          file: { path: resolvedWatchDir, size: 0, mtime: new Date().toISOString() },
+        },
+      };
+      outputNdjson(event);
+    }
   });
 }
 
@@ -317,6 +352,15 @@ export async function shutdown(
     failed: finalStats.failed,
     averageLatencyMs: finalStats.averageLatencyMs,
   });
+
+  // Emit NDJSON stop event
+  if (ctx.jsonMode) {
+    const event: WatchEventJson = {
+      type: "stop",
+      timestamp: new Date().toISOString(),
+    };
+    outputNdjson(event);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -378,6 +422,9 @@ ${chalk.bold.cyan("Examples:")}
 
   renamed watch ~/scans -o ~/Documents -f ~/failed
       ${chalk.gray("Custom output and failed directories")}
+
+  renamed watch ~/inbox --json
+      ${chalk.gray("Stream NDJSON events for scripting")}
 
 ${chalk.bold.cyan("Tips:")}
   • Use ${chalk.yellow("--dry-run")} first to preview behavior
@@ -457,6 +504,7 @@ ${chalk.bold.cyan("Tips:")}
       }
 
       // Create context
+      const jsonMode = isJsonMode();
       const ctx: WatchContext = {
         api,
         logger,
@@ -469,6 +517,7 @@ ${chalk.bold.cyan("Tips:")}
         failedDir: resolvedFailedDir,
         dryRun: options.dryRun ?? false,
         isShuttingDown: false,
+        jsonMode,
       };
 
       // Setup signal handlers for graceful shutdown

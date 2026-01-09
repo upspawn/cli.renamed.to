@@ -11,22 +11,23 @@ import { CLIError } from "./types.js";
 
 export function notAuthenticated(): CLIError {
   return new CLIError("AUTH_NOT_AUTHENTICATED", "You need to log in first", {
-    suggestion: "Authenticate with your renamed.to account",
-    example: "renamed auth device",
+    suggestion: "Run the command below to authenticate (opens browser)",
+    example: "renamed auth login",
+    docs: "https://www.renamed.to/docs/cli/auth",
   });
 }
 
 export function tokenExpired(): CLIError {
   return new CLIError("AUTH_TOKEN_EXPIRED", "Your session has expired", {
-    suggestion: "Log in again to continue",
-    example: "renamed auth device",
+    suggestion: "Log in again to continue (opens browser)",
+    example: "renamed auth login",
   });
 }
 
 export function refreshFailed(details?: string): CLIError {
   return new CLIError("AUTH_REFRESH_FAILED", "Couldn't refresh your session", {
-    suggestion: "Your session may have been revoked. Please log in again",
-    example: "renamed auth device",
+    suggestion: "Your session may have been revoked. Log in again",
+    example: "renamed auth login",
     details,
   });
 }
@@ -34,7 +35,7 @@ export function refreshFailed(details?: string): CLIError {
 export function invalidToken(details?: string): CLIError {
   return new CLIError("AUTH_INVALID_TOKEN", "Your credentials are invalid", {
     suggestion: "Log in again to get new credentials",
-    example: "renamed auth device",
+    example: "renamed auth login",
     details,
   });
 }
@@ -138,7 +139,7 @@ export function rateLimited(retryAfterSeconds?: number): CLIError {
 export function quotaExceeded(): CLIError {
   return new CLIError("API_QUOTA_EXCEEDED", "You've reached your monthly limit", {
     suggestion: "Upgrade your plan or wait for the next billing cycle",
-    docs: "https://renamed.to/pricing",
+    docs: "https://www.renamed.to/pricing",
   });
 }
 

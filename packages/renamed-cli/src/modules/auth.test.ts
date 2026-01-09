@@ -23,6 +23,9 @@ vi.mock("chalk", () => {
     red: identity,
     gray: identity,
   });
+  const blueMock = Object.assign(identity, {
+    underline: identity,
+  });
   return {
     default: {
       red: identity,
@@ -30,7 +33,9 @@ vi.mock("chalk", () => {
       cyan: identity,
       yellow: identity,
       gray: identity,
+      dim: identity,
       bold: boldMock,
+      blue: blueMock,
     }
   };
 });
@@ -38,6 +43,29 @@ vi.mock("chalk", () => {
 // Mock device-flow
 vi.mock("./device-flow.js", () => ({
   runDeviceAuth: vi.fn()
+}));
+
+// Mock CLI context
+vi.mock("../lib/cli-context.js", () => ({
+  isJsonMode: () => false,
+  isNonInteractive: () => false
+}));
+
+// Mock JSON output
+vi.mock("../lib/json-output.js", () => ({
+  outputSuccess: vi.fn(),
+  outputError: vi.fn()
+}));
+
+// Mock spinner
+vi.mock("../lib/spinner.js", () => ({
+  createSpinner: () => ({
+    start: vi.fn().mockReturnThis(),
+    stop: vi.fn().mockReturnThis(),
+    succeed: vi.fn().mockReturnThis(),
+    fail: vi.fn().mockReturnThis(),
+    text: ""
+  })
 }));
 
 import { runDeviceAuth } from "./device-flow.js";
@@ -156,7 +184,7 @@ describe("registerAuthCommands", () => {
     });
   });
 
-  describe("auth device", () => {
+  describe("auth login (OAuth device flow)", () => {
     it("runs device auth flow and stores tokens", async () => {
       const api = createMockApi();
       const mockTokens = {
@@ -166,12 +194,12 @@ describe("registerAuthCommands", () => {
       vi.mocked(runDeviceAuth).mockResolvedValue(mockTokens);
       registerAuthCommands(program, api as never);
 
-      await program.parseAsync(["node", "test", "auth", "device"]);
+      await program.parseAsync(["node", "test", "auth", "login"]);
 
       expect(runDeviceAuth).toHaveBeenCalled();
       expect(api.storeOAuthTokens).toHaveBeenCalledWith(mockTokens);
       expect(consoleLogSpy).toHaveBeenCalledWith(
-        expect.stringContaining("successful")
+        expect.stringContaining("authenticated")
       );
     });
 
@@ -180,7 +208,7 @@ describe("registerAuthCommands", () => {
       vi.mocked(runDeviceAuth).mockRejectedValue(new Error("Device auth failed"));
       registerAuthCommands(program, api as never);
 
-      await program.parseAsync(["node", "test", "auth", "device"]);
+      await program.parseAsync(["node", "test", "auth", "login"]);
 
       expect(consoleErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining("Device auth failed")
@@ -194,7 +222,7 @@ describe("registerAuthCommands", () => {
       registerAuthCommands(program, api as never);
 
       await program.parseAsync([
-        "node", "test", "auth", "device",
+        "node", "test", "auth", "login",
         "--client-id", "custom-client-id"
       ]);
 
@@ -209,7 +237,7 @@ describe("registerAuthCommands", () => {
       registerAuthCommands(program, api as never);
 
       await program.parseAsync([
-        "node", "test", "auth", "device",
+        "node", "test", "auth", "login",
         "--scope", "read write"
       ]);
 
@@ -219,13 +247,13 @@ describe("registerAuthCommands", () => {
     });
   });
 
-  describe("auth login", () => {
+  describe("auth token (manual API token)", () => {
     it("saves token with --token flag", async () => {
       const api = createMockApi();
       registerAuthCommands(program, api as never);
 
       await program.parseAsync([
-        "node", "test", "auth", "login",
+        "node", "test", "auth", "token",
         "--token", "my-api-token"
       ]);
 
@@ -237,7 +265,7 @@ describe("registerAuthCommands", () => {
       registerAuthCommands(program, api as never);
 
       await program.parseAsync([
-        "node", "test", "auth", "login",
+        "node", "test", "auth", "token",
         "--token", "my-token",
         "--scheme", "ApiKey"
       ]);
@@ -245,12 +273,12 @@ describe("registerAuthCommands", () => {
       expect(api.setLegacyToken).toHaveBeenCalledWith("my-token", "ApiKey");
     });
 
-    it("handles login errors", async () => {
+    it("handles token save errors", async () => {
       const api = createMockApi();
       registerAuthCommands(program, api as never);
 
       await program.parseAsync([
-        "node", "test", "auth", "login",
+        "node", "test", "auth", "token",
         "--non-interactive"
       ]);
 

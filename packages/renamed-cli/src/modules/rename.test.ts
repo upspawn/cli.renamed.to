@@ -1,21 +1,44 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
-// Mock ora
-vi.mock("ora", () => ({
-  default: () => ({
+// Mock spinner
+vi.mock("../lib/spinner.js", () => ({
+  createSpinner: () => ({
     start: vi.fn().mockReturnThis(),
+    stop: vi.fn().mockReturnThis(),
     succeed: vi.fn().mockReturnThis(),
     fail: vi.fn().mockReturnThis(),
-    text: ""
+    warn: vi.fn().mockReturnThis(),
+    text: "",
+    isSpinning: false
   })
+}));
+
+// Mock CLI context
+vi.mock("../lib/cli-context.js", () => ({
+  isJsonMode: () => false,
+  getConflictStrategy: () => "fail"
+}));
+
+// Mock JSON output
+vi.mock("../lib/json-output.js", () => ({
+  outputSuccess: vi.fn(),
+  outputError: vi.fn()
+}));
+
+// Mock file identity
+vi.mock("../lib/file-identity.js", () => ({
+  getFileIdentity: (path: string) => ({ path, size: 1024, mtime: "2024-01-01T00:00:00.000Z" }),
+  generateConflictSuffix: () => "abc123"
 }));
 
 // Mock fs with configurable behavior
 const mockStatSync = vi.fn();
 const mockMkdirSync = vi.fn();
+const mockExistsSync = vi.fn().mockReturnValue(false);
 vi.mock("fs", () => ({
   statSync: (...args: unknown[]) => mockStatSync(...args),
-  mkdirSync: (...args: unknown[]) => mockMkdirSync(...args)
+  mkdirSync: (...args: unknown[]) => mockMkdirSync(...args),
+  existsSync: (...args: unknown[]) => mockExistsSync(...args)
 }));
 
 vi.mock("fs/promises", () => ({

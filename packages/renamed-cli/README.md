@@ -1,6 +1,6 @@
 # renamed.to CLI
 
-A modern CLI tool for AI-powered file renaming, document extraction, and PDF splitting using the [renamed.to](https://renamed.to) service.
+A modern CLI tool for AI-powered file renaming, document extraction, and PDF splitting using the [renamed.to](https://www.renamed.to) service.
 
 ## Features
 
@@ -30,7 +30,7 @@ pnpm add -g @renamed-to/cli
 
 1. **Authenticate** with your renamed.to account:
    ```bash
-   renamed auth device
+   renamed auth login
    ```
    This opens your browser to complete authentication.
 
@@ -54,13 +54,13 @@ pnpm add -g @renamed-to/cli
 ### Authentication
 
 ```bash
-renamed auth device           # OAuth device flow (recommended)
-renamed auth login --token X  # Use API token
+renamed auth login            # OAuth device flow (recommended)
+renamed auth token --token X  # Use API token manually
 renamed auth logout           # Remove stored credentials
 renamed auth whoami           # Show current user
 ```
 
-The device flow uses a built-in public client ID, so no configuration needed.
+The login command uses OAuth device flow with a built-in public client ID, so no configuration needed.
 
 ### File Renaming
 
@@ -72,6 +72,7 @@ renamed rename <files...> [options]
 |--------|-------------|
 | `-a, --apply` | Automatically apply suggested names |
 | `-o, --output-dir <dir>` | Base directory for organized output (uses AI folder suggestions) |
+| `--overwrite` | Overwrite existing files without prompting |
 
 **Examples:**
 ```bash
@@ -205,6 +206,45 @@ logging:
   json: false
 ```
 
+### Diagnostics
+
+Check system configuration and connectivity:
+
+```bash
+renamed doctor              # Run all checks
+renamed doctor --verbose    # Include detailed system info
+renamed doctor --json       # Machine-readable output
+```
+
+## Global Options
+
+These options work with all commands:
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output results as JSON (machine-readable) |
+| `-q, --quiet` | Suppress progress indicators and spinners |
+| `-y, --yes` | Skip confirmation prompts (auto-confirm) |
+| `--no-input` | Fail instead of prompting for input (CI mode) |
+| `--timeout <ms>` | Request timeout in milliseconds (default: 30000) |
+| `--retry <count>` | Number of retry attempts for failed requests (default: 2) |
+| `--on-conflict <strategy>` | Handle file conflicts: `fail`, `skip`, or `suffix` |
+
+**Examples:**
+```bash
+# Machine-readable output for scripting
+renamed rename invoice.pdf --json
+
+# CI/CD pipeline (no prompts, fail on conflicts)
+renamed rename --apply *.pdf --no-input --on-conflict fail
+
+# Quiet mode for cron jobs
+renamed watch ~/incoming -o ~/organized --quiet
+
+# NDJSON streaming for watch mode
+renamed watch ~/Downloads --json
+```
+
 ## Server Deployment
 
 For running as a systemd service on Linux servers, see [docs/SERVER-SETUP.md](packages/renamed-cli/docs/SERVER-SETUP.md).
@@ -224,9 +264,12 @@ echo "" | nc -U /tmp/renamed-health.sock
 
 | Variable | Description |
 |----------|-------------|
-| `RENAMED_API_TOKEN` | API token for authentication |
+| `RENAMED_TOKEN` | API token for authentication (overrides keychain) |
 | `RENAMED_CLIENT_ID` | Custom OAuth client ID |
 | `RENAMED_CLIENT_SECRET` | OAuth client secret (confidential clients) |
+| `RENAMED_JSON=1` | Enable JSON output mode |
+| `RENAMED_QUIET=1` | Enable quiet mode |
+| `CI=1` | Enable non-interactive mode (same as `--no-input`) |
 
 ## Supported File Types
 

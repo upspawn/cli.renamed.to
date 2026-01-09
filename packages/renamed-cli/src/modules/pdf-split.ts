@@ -1,6 +1,5 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import ora from "ora";
 import { statSync, mkdirSync } from "fs";
 import { basename, join, resolve } from "path";
 import type { ApiClient, MultipartField } from "../lib/api-client.js";
@@ -8,6 +7,10 @@ import type { DownloadService } from "../lib/ports/download.js";
 import type { DelayFn } from "../lib/ports/timer.js";
 import { fetchDownloadService } from "../lib/adapters/fetch-download.js";
 import { realDelay } from "../lib/adapters/real-timers.js";
+import { createSpinner } from "../lib/spinner.js";
+import { isJsonMode } from "../lib/cli-context.js";
+import { outputSuccess, type PdfSplitResultJson } from "../lib/json-output.js";
+import { getFileIdentity } from "../lib/file-identity.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -311,18 +314,31 @@ ${chalk.bold.cyan("Examples:")}
 
   renamed pdf-split large.pdf
       ${chalk.gray("Submit job and get ID (check status manually)")}
+
+  renamed pdf-split doc.pdf --wait --json
+      ${chalk.gray("JSON output for scripting")}
 `
     )
     .action(async (file: string, options: PdfSplitOptions) => {
-      const spinner = ora(`Submitting ${basename(file)} for splitting`).start();
+      const jsonMode = isJsonMode();
+      const spinner = createSpinner(`Submitting ${basename(file)} for splitting`).start();
 
       try {
+        const inputIdentity = getFileIdentity(file);
         const jobResponse = await splitPdf(api, file, options);
         spinner.succeed("Job submitted");
 
         if (!options.wait) {
-          for (const line of formatJobInfo(jobResponse)) {
-            console.log(line ? chalk.cyan(line) : "");
+          if (jsonMode) {
+            outputSuccess({
+              jobId: jobResponse.jobId,
+              status: jobResponse.status,
+              statusUrl: jobResponse.statusUrl,
+            });
+          } else {
+            for (const line of formatJobInfo(jobResponse)) {
+              console.log(line ? chalk.cyan(line) : "");
+            }
           }
           return;
         }
@@ -347,9 +363,19 @@ ${chalk.bold.cyan("Examples:")}
           !statusResponse.documents ||
           statusResponse.documents.length === 0
         ) {
-          console.log(
-            chalk.yellow("No documents were created from the split")
-          );
+          if (jsonMode) {
+            const result: PdfSplitResultJson = {
+              input: inputIdentity,
+              mode: options.mode ?? "smart",
+              outputFiles: [],
+              summary: { totalPages: 0, outputCount: 0 },
+            };
+            outputSuccess(result);
+          } else {
+            console.log(
+              chalk.yellow("No documents were created from the split")
+            );
+          }
           return;
         }
 
@@ -365,11 +391,27 @@ ${chalk.bold.cyan("Examples:")}
         );
         spinner.succeed("Downloads complete");
 
-        for (const line of formatCompletionSummary(
-          statusResponse.documents,
-          downloadedPaths
-        )) {
-          console.log(line ? chalk.cyan(line) : "");
+        if (jsonMode) {
+          const result: PdfSplitResultJson = {
+            input: inputIdentity,
+            mode: options.mode ?? "smart",
+            outputFiles: statusResponse.documents.map((doc, i) => ({
+              path: downloadedPaths[i],
+              pages: doc.pages,
+            })),
+            summary: {
+              totalPages: statusResponse.documents.reduce((sum, doc) => sum + doc.pages.length, 0),
+              outputCount: statusResponse.documents.length,
+            },
+          };
+          outputSuccess(result);
+        } else {
+          for (const line of formatCompletionSummary(
+            statusResponse.documents,
+            downloadedPaths
+          )) {
+            console.log(line ? chalk.cyan(line) : "");
+          }
         }
       } catch (error) {
         spinner.fail("PDF split failed");
