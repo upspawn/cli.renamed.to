@@ -29,15 +29,15 @@ invoice.pdf → 2024-01-15_Acme_Corp_Invoice_INV-2024-0042.pdf
 Pull structured data from invoices, receipts, contracts, and more.
 
 ```bash
-$ renamed extract invoice.pdf --schema invoice --output table
-┌─────────────┬──────────────────────────┐
-│ Field       │ Value                    │
-├─────────────┼──────────────────────────┤
-│ vendor      │ Acme Corporation         │
-│ invoice_no  │ INV-2024-0042            │
-│ date        │ 2024-01-15               │
-│ total       │ $1,234.56                │
-└─────────────┴──────────────────────────┘
+$ renamed extract invoice.pdf
+┌─────────────────┬──────────────────────────┬────────────┐
+│ Field           │ Value                    │ Confidence │
+├─────────────────┼──────────────────────────┼────────────┤
+│ vendor          │ Acme Corporation         │ 98%        │
+│ invoice_no      │ INV-2024-0042            │ 99%        │
+│ date            │ 2024-01-15               │ 97%        │
+│ total           │ $1,234.56                │ 98%        │
+└─────────────────┴──────────────────────────┴────────────┘
 ```
 
 ### Split PDFs with AI
@@ -51,6 +51,15 @@ $ renamed pdf-split merged-invoices.pdf --wait
   + invoice-001.pdf (pages 1-2)
   + invoice-002.pdf (pages 3-4)
   + invoice-003.pdf (pages 5-6)
+```
+
+### Watch & Auto-Organize
+
+Monitor directories and automatically organize incoming files.
+
+```bash
+$ renamed watch ~/Downloads -o ~/Documents/organized
+✔ Watcher ready, monitoring for new files
 ```
 
 ---
@@ -68,7 +77,7 @@ pnpm add -g @renamed-to/cli
 ### 2. Authenticate
 
 ```bash
-renamed auth device
+renamed auth login
 ```
 
 This opens your browser to complete OAuth authentication. No API keys to manage.
@@ -80,10 +89,13 @@ This opens your browser to complete OAuth authentication. No API keys to manage.
 renamed rename *.pdf --apply
 
 # Extract data
-renamed extract receipt.jpg --schema receipt
+renamed extract receipt.jpg
 
 # Split PDFs
 renamed pdf-split document.pdf --wait
+
+# Watch directories
+renamed watch ~/incoming -o ~/organized
 ```
 
 ---
@@ -94,8 +106,9 @@ renamed pdf-split document.pdf --wait
 |---------|-------------|
 | **Zero Config Auth** | OAuth device flow with built-in client ID |
 | **Batch Processing** | Process multiple files in one command |
-| **Multiple Outputs** | JSON, table, or CSV output formats |
+| **Watch Mode** | Auto-organize files as they arrive |
 | **Smart Splitting** | AI understands document boundaries |
+| **JSON Output** | Machine-readable output for scripting |
 | **Secure Storage** | Tokens stored safely with auto-refresh |
 
 ---
@@ -104,12 +117,12 @@ renamed pdf-split document.pdf --wait
 
 - [Getting Started Guide](./getting-started)
 - [Command Reference](./commands)
-- [API Documentation](https://renamed.to/docs/api-docs)
+- [API Documentation](https://www.renamed.to/docs/api-docs)
 - [GitHub Repository](https://github.com/upspawn/cli.renamed.to)
 - [Report Issues](https://github.com/upspawn/cli.renamed.to/issues)
 
 ---
 
 <p align="center">
-  <a href="https://renamed.to">renamed.to</a> · MIT License
+  <a href="https://www.renamed.to">renamed.to</a> · MIT License
 </p>

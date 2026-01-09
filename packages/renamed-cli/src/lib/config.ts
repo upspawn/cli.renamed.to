@@ -33,14 +33,6 @@ export const CONFIG_DEFAULTS = {
 // Zod Schemas
 // ---------------------------------------------------------------------------
 
-/** Schema for a single watch directory configuration */
-const WatchDirSchema = z.object({
-  path: z.string().min(1, "Watch path cannot be empty"),
-  outputDir: z.string().min(1, "Output directory cannot be empty"),
-  failedDir: z.string().min(1, "Failed directory cannot be empty"),
-  patterns: z.array(z.string()).optional(),
-});
-
 /** Schema for rate limiting configuration */
 const RateLimitSchema = z.object({
   concurrency: z.number().int().min(1).max(10).optional(),
@@ -53,7 +45,6 @@ const RateLimitSchema = z.object({
 export const ConfigFileSchema = z.object({
   watch: z
     .object({
-      directories: z.array(WatchDirSchema).min(1).optional(),
       patterns: z.array(z.string()).optional(),
       outputDir: z.string().optional(),
       failedDir: z.string().optional(),

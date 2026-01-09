@@ -46,7 +46,7 @@ sudo chown -R renamed:renamed /var/watch /var/organized
 # Environment=RENAMED_CLIENT_ID=your-client-id
 
 # Option B: Device flow authentication (run as renamed user)
-sudo -u renamed /opt/renamed/node_modules/.bin/renamed auth device
+sudo -u renamed /opt/renamed/node_modules/.bin/renamed auth login
 ```
 
 ### 5. Create Configuration (Optional)
@@ -188,7 +188,7 @@ sudo -u renamed /opt/renamed/node_modules/.bin/renamed watch \
    sudo -u renamed /opt/renamed/node_modules/.bin/renamed auth whoami
 
    # If not authenticated:
-   sudo -u renamed /opt/renamed/node_modules/.bin/renamed auth device
+   sudo -u renamed /opt/renamed/node_modules/.bin/renamed auth login
    ```
 
 2. **Permission denied on directories:**
