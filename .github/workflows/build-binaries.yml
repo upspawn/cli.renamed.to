@@ -1,0 +1,146 @@
+name: Build Binaries
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g., v1.0.0)"
+        required: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: bun-darwin-arm64
+            name: renamed-darwin-arm64
+          - os: macos-13
+            target: bun-darwin-x64
+            name: renamed-darwin-x64
+          - os: ubuntu-latest
+            target: bun-linux-x64
+            name: renamed-linux-x64
+          - os: ubuntu-24.04-arm
+            target: bun-linux-arm64
+            name: renamed-linux-arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build binary
+        working-directory: packages/renamed-cli
+        run: |
+          bun build --compile --target=${{ matrix.target }} src/index.ts --outfile=renamed
+
+      - name: Create tarball
+        working-directory: packages/renamed-cli
+        run: |
+          tar -czvf ${{ matrix.name }}.tar.gz renamed
+          shasum -a 256 ${{ matrix.name }}.tar.gz > ${{ matrix.name }}.tar.gz.sha256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            packages/renamed-cli/${{ matrix.name }}.tar.gz
+            packages/renamed-cli/${{ matrix.name }}.tar.gz.sha256
+
+  upload-release:
+    name: Upload to Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Get release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload binaries to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.sha256
+
+  update-homebrew:
+    name: Update Homebrew Formula
+    needs: upload-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: renamed-to/homebrew-cli
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Download artifacts for SHA256
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          else
+            VERSION="${{ github.event.inputs.tag }}"
+          fi
+          # Remove 'v' prefix if present
+          VERSION="${VERSION#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update formula
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Read SHA256 values
+          SHA_DARWIN_ARM64=$(cat artifacts/renamed-darwin-arm64/renamed-darwin-arm64.tar.gz.sha256 | awk '{print $1}')
+          SHA_DARWIN_X64=$(cat artifacts/renamed-darwin-x64/renamed-darwin-x64.tar.gz.sha256 | awk '{print $1}')
+          SHA_LINUX_ARM64=$(cat artifacts/renamed-linux-arm64/renamed-linux-arm64.tar.gz.sha256 | awk '{print $1}')
+          SHA_LINUX_X64=$(cat artifacts/renamed-linux-x64/renamed-linux-x64.tar.gz.sha256 | awk '{print $1}')
+
+          # Update formula
+          cd homebrew-tap
+          sed -i "s/version \".*\"/version \"$VERSION\"/" Formula/renamed.rb
+          sed -i "s/PLACEHOLDER_SHA256_DARWIN_ARM64\|[a-f0-9]\{64\}/$SHA_DARWIN_ARM64/" Formula/renamed.rb
+          sed -i "s/PLACEHOLDER_SHA256_DARWIN_X64\|[a-f0-9]\{64\}/$SHA_DARWIN_X64/" Formula/renamed.rb
+          sed -i "s/PLACEHOLDER_SHA256_LINUX_ARM64\|[a-f0-9]\{64\}/$SHA_LINUX_ARM64/" Formula/renamed.rb
+          sed -i "s/PLACEHOLDER_SHA256_LINUX_X64\|[a-f0-9]\{64\}/$SHA_LINUX_X64/" Formula/renamed.rb
+
+          cat Formula/renamed.rb
+
+      - name: Commit and push updated formula
+        run: |
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/renamed.rb
+          git diff --staged --quiet || git commit -m "chore: update formula for v${{ steps.version.outputs.version }}"
+          git push
