@@ -94,6 +94,12 @@ importers:
         specifier: ^4.0.16
         version: 4.0.16(@types/node@25.0.3)(yaml@2.8.2)
 
+  packages/renamed-to:
+    dependencies:
+      '@renamed-to/cli':
+        specifier: workspace:*
+        version: link:../renamed-cli
+
 packages:
 
   '@babel/helper-string-parser@7.27.1':
