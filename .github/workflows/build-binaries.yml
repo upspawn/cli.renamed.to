@@ -39,6 +39,10 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Install dependencies
+        working-directory: packages/renamed-cli
+        run: bun install
+
       - name: Build binary
         working-directory: packages/renamed-cli
         run: |
