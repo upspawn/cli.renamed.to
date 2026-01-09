@@ -132,11 +132,11 @@ jobs:
 
           # Update formula
           cd homebrew-tap
-          sed -i "s/version \".*\"/version \"$VERSION\"/" Formula/renamed.rb
-          sed -i "s/PLACEHOLDER_SHA256_DARWIN_ARM64\|[a-f0-9]\{64\}/$SHA_DARWIN_ARM64/" Formula/renamed.rb
-          sed -i "s/PLACEHOLDER_SHA256_DARWIN_X64\|[a-f0-9]\{64\}/$SHA_DARWIN_X64/" Formula/renamed.rb
-          sed -i "s/PLACEHOLDER_SHA256_LINUX_ARM64\|[a-f0-9]\{64\}/$SHA_LINUX_ARM64/" Formula/renamed.rb
-          sed -i "s/PLACEHOLDER_SHA256_LINUX_X64\|[a-f0-9]\{64\}/$SHA_LINUX_X64/" Formula/renamed.rb
+          sed -i -E "s#version \"[^\"]*\"#version \"$VERSION\"#" Formula/renamed.rb
+          sed -i -E "s#PLACEHOLDER_SHA256_DARWIN_ARM64|[a-f0-9]{64}#$SHA_DARWIN_ARM64#" Formula/renamed.rb
+          sed -i -E "s#PLACEHOLDER_SHA256_DARWIN_X64|[a-f0-9]{64}#$SHA_DARWIN_X64#" Formula/renamed.rb
+          sed -i -E "s#PLACEHOLDER_SHA256_LINUX_ARM64|[a-f0-9]{64}#$SHA_LINUX_ARM64#" Formula/renamed.rb
+          sed -i -E "s#PLACEHOLDER_SHA256_LINUX_X64|[a-f0-9]{64}#$SHA_LINUX_X64#" Formula/renamed.rb
 
           cat Formula/renamed.rb
 
