@@ -176,22 +176,61 @@ Maintained via changesets (see Release Workflow below)
 
 ## Release Workflow
 
-This project uses [Changesets](https://github.com/changesets/changesets) for versioning:
+This project uses [Changesets](https://github.com/changesets/changesets) for versioning and GitHub Actions for automated publishing. **Never publish locally** - all releases go through CI/CD.
 
+### How It Works
+
+1. When PRs with changesets are merged to `main`, GitHub Actions automatically creates/updates a **Release PR** titled "Version Packages"
+2. The Release PR accumulates all pending changesets and shows the version bump + changelog
+3. When the Release PR is merged, GitHub Actions automatically publishes to npm
+
+### Step-by-Step Release Process
+
+#### 1. Create a changeset with your changes
 ```bash
-# After making changes, create a changeset
 npx changeset
+# Select: @renamed-to/cli
+# Select: patch/minor/major
+# Write description from user perspective
+```
+This creates a file like `.changeset/fuzzy-lions-dance.md`
 
-# Select packages affected, version bump type, and describe changes
-# This creates a file in .changeset/
+#### 2. Commit everything together
+```bash
+git add .
+git commit -m "feat: your feature description"
+```
 
-# When ready to release (typically done by maintainers)
-pnpm version-packages  # Applies changesets, updates CHANGELOG.md
-pnpm release           # Publishes to npm
+#### 3. Push and create PR
+```bash
+git push origin your-feature-branch
+# Create PR on GitHub, get it reviewed and merged
+```
+
+#### 4. Wait for Release PR (automatic)
+After your PR merges to `main`, GitHub Actions will:
+- Detect the new changeset
+- Create/update a PR titled **"Version Packages"**
+- This PR contains the version bump and CHANGELOG updates
+
+#### 5. Merge the Release PR
+When ready to release, merge the "Version Packages" PR. GitHub Actions will:
+- Build and test
+- Publish to npm with provenance
+- Create a GitHub Release
+
+### Quick Reference
+```bash
+# Development workflow:
+npx changeset                    # Create changeset
+git add . && git commit          # Commit with changeset
+git push && gh pr create         # Create PR
+
+# After PR merges: wait for "Version Packages" PR, then merge it to release
 ```
 
 ### Version Bump Guidelines
-- **patch**: Bug fixes, dependency updates, internal refactors
+- **patch**: Bug fixes, documentation, dependency updates, internal refactors
 - **minor**: New features, new commands, new options (backward compatible)
 - **major**: Breaking changes to commands, options, or JSON output
 
@@ -202,6 +241,25 @@ Added `--timeout` flag to control request timeouts
 Fixed exit code when `--help` is passed
 Improved error messages for authentication failures
 ```
+
+### Pre-Release Checklist
+Before merging the "Version Packages" PR:
+- [ ] All CI checks pass (typecheck, test, lint)
+- [ ] README.md updated if commands/options changed
+- [ ] `docs/` folder updated if commands/options changed
+- [ ] Changeset describes user-visible changes
+- [ ] CHANGELOG.md preview looks correct
+
+### Troubleshooting
+
+**No Release PR created?**
+- Check that your PR included a `.changeset/*.md` file
+- The workflow only triggers on changes to `.changeset/**` or `packages/**`
+
+**Release failed?**
+- Check GitHub Actions logs
+- Ensure `NPM_TOKEN` secret is set in repository settings
+- Verify npm package permissions
 
 ## PR Workflow
 
