@@ -1,5 +1,15 @@
 # @renamed-to/cli
 
+## 1.1.2
+
+### Patch Changes
+
+- 3bcc98f: Fixed lint issues across the codebase
+  - Removed unused imports in watch.ts, logger.test.ts, e2e-test.ts
+  - Fixed unused variables in index.ts, rename.test.ts, e2e-test.ts
+  - Prefixed unused parameters with underscore in extract.ts
+  - Added coverage/\*\* to eslint ignores (generated files)
+
 ## 1.1.1
 
 ### Patch Changes
