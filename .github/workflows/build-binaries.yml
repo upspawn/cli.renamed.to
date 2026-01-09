@@ -135,6 +135,10 @@ jobs:
           # Update version
           sed -i -E "s#version \"[^\"]*\"#version \"$VERSION\"#" Formula/renamed.rb
 
+          # Update download URLs to use changesets tag format (@renamed-to/cli@VERSION)
+          # URL-encoded: %40renamed-to%2Fcli%40VERSION
+          sed -i -E "s#/download/[^/]+/#/download/%40renamed-to%2Fcli%40$VERSION/#g" Formula/renamed.rb
+
           # Update SHA256 values in order of appearance:
           # 1: darwin-arm64, 2: darwin-x64, 3: linux-arm64, 4: linux-x64
           awk -v sha1="$SHA_DARWIN_ARM64" -v sha2="$SHA_DARWIN_X64" \
