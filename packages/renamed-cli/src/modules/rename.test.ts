@@ -48,11 +48,6 @@ vi.mock("fs/promises", () => ({
 // Mock chalk with full API including chained methods
 vi.mock("chalk", () => {
   const identity = (s: string) => s;
-  const createChained = () => Object.assign(identity, {
-    bold: identity,
-    dim: identity,
-    underline: identity,
-  });
   const red = Object.assign(identity, { bold: identity });
   const blue = Object.assign(identity, { underline: identity });
   return {

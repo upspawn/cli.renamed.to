@@ -19,8 +19,6 @@ import { createHealthServer, type HealthServer } from "../lib/health.js";
 import type { FileWatcherFactory } from "../lib/ports/file-watcher.js";
 import type { SignalHandler } from "../lib/ports/signal-handler.js";
 import type { TimerService } from "../lib/ports/timer.js";
-import { chokidarWatcherFactory } from "../lib/adapters/chokidar-watcher.js";
-import { createProcessSignalHandler } from "../lib/adapters/process-signals.js";
 import { realTimerService } from "../lib/adapters/real-timers.js";
 import { isJsonMode } from "../lib/cli-context.js";
 import { outputNdjson, type WatchEventJson } from "../lib/json-output.js";

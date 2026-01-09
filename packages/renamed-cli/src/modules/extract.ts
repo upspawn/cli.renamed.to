@@ -127,7 +127,7 @@ export function parseInlineSchema(schema: string): ExtractionSchema {
  */
 export function parseSchemaContent(
   content: string,
-  filePath: string
+  _filePath: string
 ): ExtractionSchema {
   try {
     return JSON.parse(content) as ExtractionSchema;

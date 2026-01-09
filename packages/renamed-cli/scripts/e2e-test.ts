@@ -8,8 +8,8 @@
  * If no PDF is provided, creates a simple test file.
  */
 
-import { execSync, spawn } from "child_process";
-import { existsSync, mkdirSync, writeFileSync, unlinkSync, rmSync } from "fs";
+import { execSync } from "child_process";
+import { existsSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -285,7 +285,7 @@ function testRename(testFile: string | null, hasApiKey: boolean): void {
   }
 
   test("rename shows preview without --apply", () => {
-    const { success, output, error } = runCommand(["rename", testFile]);
+    const { output, error } = runCommand(["rename", testFile]);
     const combined = output + error;
     // Should show a suggestion or error about auth/API
     return {
@@ -311,7 +311,7 @@ function testExtract(testFile: string | null, hasApiKey: boolean): void {
   }
 
   test("extract in discovery mode", () => {
-    const { success, output, error } = runCommand(["extract", testFile, "--output", "json"]);
+    const { output, error } = runCommand(["extract", testFile, "--output", "json"]);
     const combined = output + error;
     return {
       passed: combined.includes("fields") || combined.includes("Extraction") || combined.includes("Error"),
@@ -334,7 +334,7 @@ function testPdfSplit(testFile: string | null, hasApiKey: boolean): void {
   }
 
   test("pdf-split submits job", () => {
-    const { success, output, error } = runCommand(["pdf-split", testFile]);
+    const { output, error } = runCommand(["pdf-split", testFile]);
     const combined = output + error;
     return {
       passed: combined.includes("Job") || combined.includes("submitted") || combined.includes("Error"),

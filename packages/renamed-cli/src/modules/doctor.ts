@@ -108,7 +108,7 @@ async function runDoctor(api: ApiClient, verbose: boolean): Promise<void> {
   // Auth check
   const tokenStore = new ConfTokenStore();
   const tokens = tokenStore.getTokens();
-  let authStatus = {
+  const authStatus = {
     hasCredentials: false,
     tokenExpiry: undefined as string | undefined,
   };

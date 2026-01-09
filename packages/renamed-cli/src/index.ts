@@ -107,7 +107,6 @@ function handleCommanderError(error: CommanderError, argv: string[]): CLIError {
   if (missingArgMatch) {
     const argName = missingArgMatch[1];
     const commandName = command || "command";
-    const example = examples?.[0];
     const usage = `renamed ${commandName} <${argName}>`;
     return missingArgument(argName, commandName, usage, examples);
   }
