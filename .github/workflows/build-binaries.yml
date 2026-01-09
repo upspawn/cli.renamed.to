@@ -20,7 +20,7 @@ jobs:
           - os: macos-14
             target: bun-darwin-arm64
             name: renamed-darwin-arm64
-          - os: macos-15-large
+          - os: macos-14
             target: bun-darwin-x64
             name: renamed-darwin-x64
           - os: ubuntu-latest
