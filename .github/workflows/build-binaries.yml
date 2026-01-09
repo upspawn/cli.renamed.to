@@ -112,12 +112,12 @@ jobs:
         id: version
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
-            VERSION="${{ github.event.release.tag_name }}"
+            TAG="${{ github.event.release.tag_name }}"
           else
-            VERSION="${{ github.event.inputs.tag }}"
+            TAG="${{ github.event.inputs.tag }}"
           fi
-          # Remove 'v' prefix if present
-          VERSION="${VERSION#v}"
+          # Extract version number (handles @renamed-to/cli@1.1.2 or v1.1.2)
+          VERSION=$(echo "$TAG" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Update formula
@@ -130,13 +130,25 @@ jobs:
           SHA_LINUX_ARM64=$(cat artifacts/renamed-linux-arm64/renamed-linux-arm64.tar.gz.sha256 | awk '{print $1}')
           SHA_LINUX_X64=$(cat artifacts/renamed-linux-x64/renamed-linux-x64.tar.gz.sha256 | awk '{print $1}')
 
-          # Update formula
           cd homebrew-tap
+
+          # Update version
           sed -i -E "s#version \"[^\"]*\"#version \"$VERSION\"#" Formula/renamed.rb
-          sed -i -E "s#PLACEHOLDER_SHA256_DARWIN_ARM64|[a-f0-9]{64}#$SHA_DARWIN_ARM64#" Formula/renamed.rb
-          sed -i -E "s#PLACEHOLDER_SHA256_DARWIN_X64|[a-f0-9]{64}#$SHA_DARWIN_X64#" Formula/renamed.rb
-          sed -i -E "s#PLACEHOLDER_SHA256_LINUX_ARM64|[a-f0-9]{64}#$SHA_LINUX_ARM64#" Formula/renamed.rb
-          sed -i -E "s#PLACEHOLDER_SHA256_LINUX_X64|[a-f0-9]{64}#$SHA_LINUX_X64#" Formula/renamed.rb
+
+          # Update SHA256 values in order of appearance:
+          # 1: darwin-arm64, 2: darwin-x64, 3: linux-arm64, 4: linux-x64
+          awk -v sha1="$SHA_DARWIN_ARM64" -v sha2="$SHA_DARWIN_X64" \
+              -v sha3="$SHA_LINUX_ARM64" -v sha4="$SHA_LINUX_X64" '
+          BEGIN { count = 0 }
+          /sha256 "/ {
+            count++
+            if (count == 1) gsub(/sha256 "[^"]*"/, "sha256 \"" sha1 "\"")
+            else if (count == 2) gsub(/sha256 "[^"]*"/, "sha256 \"" sha2 "\"")
+            else if (count == 3) gsub(/sha256 "[^"]*"/, "sha256 \"" sha3 "\"")
+            else if (count == 4) gsub(/sha256 "[^"]*"/, "sha256 \"" sha4 "\"")
+          }
+          { print }
+          ' Formula/renamed.rb > Formula/renamed.rb.tmp && mv Formula/renamed.rb.tmp Formula/renamed.rb
 
           cat Formula/renamed.rb
 
