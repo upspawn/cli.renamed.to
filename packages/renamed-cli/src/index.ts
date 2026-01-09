@@ -9,9 +9,11 @@ import { registerPdfSplitCommands } from "./modules/pdf-split.js";
 import { registerWatchCommands } from "./modules/watch.js";
 import { registerConfigCommands } from "./modules/config-cmd.js";
 import { registerDoctorCommand } from "./modules/doctor.js";
+import { registerUpdateCommand } from "./modules/update.js";
 import { renderUnknownError, CLIError, missingArgument } from "./lib/errors/index.js";
-import { initContext, isJsonMode } from "./lib/cli-context.js";
+import { initContext, isJsonMode, isQuietMode } from "./lib/cli-context.js";
 import { outputError } from "./lib/json-output.js";
+import { checkForUpdateQuietly } from "./lib/version-check.js";
 
 // Command examples for contextual help
 const COMMAND_EXAMPLES: Record<string, string[]> = {
@@ -131,6 +133,28 @@ function handleCommanderError(error: CommanderError, argv: string[]): CLIError {
   return new CLIError("UNKNOWN_ERROR", message);
 }
 
+/**
+ * Show update notification if a newer version is available.
+ * Only shows in interactive mode (not JSON, not quiet, TTY output).
+ */
+async function showUpdateNotification(): Promise<void> {
+  // Skip in non-interactive modes
+  if (isJsonMode() || isQuietMode() || !process.stdout.isTTY) {
+    return;
+  }
+
+  const updateInfo = await checkForUpdateQuietly();
+  if (updateInfo) {
+    console.log();
+    console.log(
+      chalk.dim(
+        `Update available: ${updateInfo.currentVersion} → ${updateInfo.latestVersion}`
+      )
+    );
+    console.log(chalk.dim(`Run: ${updateInfo.updateCommand}`));
+  }
+}
+
 export async function main(argv = process.argv): Promise<void> {
   // Initialize CLI context from arguments and environment
   initContext(argv);
@@ -204,9 +228,13 @@ ${chalk.dim("Docs:")} ${chalk.blue.underline("https://www.renamed.to/docs/cli")}
   registerWatchCommands(program, api);
   registerConfigCommands(program);
   registerDoctorCommand(program, api);
+  registerUpdateCommand(program);
 
   try {
     await program.parseAsync(argv);
+
+    // Show update notification in interactive mode (after successful command)
+    await showUpdateNotification();
   } catch (error) {
     // Handle Commander-specific errors
     if (error instanceof CommanderError) {

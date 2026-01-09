@@ -16,15 +16,42 @@ A modern CLI tool for AI-powered file renaming, document extraction, and PDF spl
 
 ## Installation
 
+### Homebrew (macOS/Linux) - Recommended
+
+```bash
+brew tap renamed-to/cli
+brew install renamed
+```
+
+### npm
+
 ```bash
 npm install -g @renamed-to/cli
 ```
 
-Or with pnpm:
+### pnpm
 
 ```bash
 pnpm add -g @renamed-to/cli
 ```
+
+## Updating
+
+Check for updates and see upgrade instructions for your installation method:
+
+```bash
+renamed update
+```
+
+Or update directly:
+
+| Method | Command |
+|--------|---------|
+| Homebrew | `brew upgrade renamed` |
+| npm | `npm update -g @renamed-to/cli` |
+| pnpm | `pnpm update -g @renamed-to/cli` |
+
+The CLI will show a subtle notification when updates are available.
 
 ## Quick Start
 
@@ -304,6 +331,16 @@ Check system configuration and connectivity:
 renamed doctor              # Run all checks
 renamed doctor --verbose    # Include detailed system info
 renamed doctor --json       # Machine-readable output
+```
+
+### Updates
+
+Check for CLI updates:
+
+```bash
+renamed update              # Check for updates and show upgrade instructions
+renamed update --check      # Only check, don't show instructions
+renamed update --json       # Machine-readable output
 ```
 
 ## Global Options
