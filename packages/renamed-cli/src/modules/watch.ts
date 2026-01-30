@@ -14,7 +14,14 @@ import {
   type ProcessingQueue,
   type QueueTask,
 } from "../lib/queue.js";
-import { processFile, type ProcessFileResult } from "../lib/file-processor.js";
+import { processFile, moveToFailed, type ProcessFileResult } from "../lib/file-processor.js";
+import {
+  splitPdf,
+  pollJobStatus,
+  downloadSplitDocuments,
+  validateFilePath as validatePdfFilePath,
+  type PdfSplitDeps,
+} from "./pdf-split.js";
 import { createHealthServer, type HealthServer } from "../lib/health.js";
 import type { FileWatcherFactory } from "../lib/ports/file-watcher.js";
 import type { SignalHandler } from "../lib/ports/signal-handler.js";
@@ -39,6 +46,8 @@ export interface WatchOptions {
   pollInterval?: string;
   passthrough?: boolean;
   passthroughDir?: string;
+  splitPdfs?: boolean;
+  deleteSourcePdf?: boolean;
 }
 
 export interface WatchContext {
@@ -56,6 +65,8 @@ export interface WatchContext {
   jsonMode: boolean;
   passthrough: boolean;
   passthroughDir: string;
+  splitPdfs: boolean;
+  deleteSourcePdf: boolean;
 }
 
 /**
@@ -124,6 +135,13 @@ export function parseConcurrency(value: string): number {
   return n;
 }
 
+/**
+ * Check if a file is a PDF based on extension.
+ */
+export function isPdfFile(filePath: string): boolean {
+  return extname(filePath).toLowerCase() === ".pdf";
+}
+
 // ---------------------------------------------------------------------------
 // Passthrough (Pipeline Mode)
 // ---------------------------------------------------------------------------
@@ -164,6 +182,154 @@ export async function moveToPassthrough(
       error: (err as Error).message,
     });
     return undefined;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PDF Split Processing
+// ---------------------------------------------------------------------------
+
+/** Options for processing a PDF through the split API */
+export interface ProcessPdfSplitOptions {
+  outputDir: string;
+  failedDir?: string;
+  dryRun?: boolean;
+  deleteSourcePdf?: boolean;
+}
+
+/**
+ * Process a PDF file through the split API.
+ * Uploads the PDF, polls for completion, downloads split documents,
+ * and optionally deletes the original.
+ */
+export async function processPdfSplit(
+  api: ApiClient,
+  filePath: string,
+  options: ProcessPdfSplitOptions,
+  logger?: Logger,
+  deps: PdfSplitDeps = {}
+): Promise<ProcessFileResult> {
+  const log = logger ?? {
+    debug: () => {},
+    info: () => {},
+    warn: () => {},
+    error: () => {},
+  };
+
+  try {
+    // Validate input file (uses 100MB limit from pdf-split)
+    validatePdfFilePath(filePath);
+
+    // Dry-run: skip API calls entirely — don't burn quota
+    if (options.dryRun) {
+      log.info("Dry run - would submit PDF for splitting", {
+        filePath,
+        deleteSourcePdf: options.deleteSourcePdf ?? false,
+      });
+      return {
+        success: true,
+        originalPath: filePath,
+        suggestedFilename: basename(filePath),
+        destinationPath: options.outputDir,
+        splitOutputPaths: [],
+        splitDocumentCount: 0,
+      };
+    }
+
+    log.info("Submitting PDF for splitting", { filePath });
+    log.warn("PDF split job may hold a queue slot for several minutes while polling", { filePath });
+
+    // 1. Upload to /pdf-split API with smart mode
+    const jobResponse = await splitPdf(api, filePath, { mode: "smart" });
+    log.debug("Split job submitted", {
+      jobId: jobResponse.jobId,
+      statusUrl: jobResponse.statusUrl,
+    });
+
+    // 2. Poll until completed/failed
+    const statusResponse = await pollJobStatus(
+      api,
+      jobResponse.statusUrl,
+      deps,
+      (status) => {
+        log.debug("Split job progress", {
+          jobId: status.jobId,
+          status: status.status,
+          progress: status.progress,
+        });
+      }
+    );
+
+    if (!statusResponse.documents || statusResponse.documents.length === 0) {
+      log.warn("Split produced no documents", { filePath });
+      return {
+        success: true,
+        originalPath: filePath,
+        suggestedFilename: basename(filePath),
+        destinationPath: options.outputDir,
+        splitOutputPaths: [],
+        splitDocumentCount: 0,
+      };
+    }
+
+    // 3. Download split documents with partial cleanup on failure
+    mkdirSync(options.outputDir, { recursive: true });
+    let downloadedPaths: string[];
+    try {
+      downloadedPaths = await downloadSplitDocuments(
+        statusResponse.documents,
+        options.outputDir,
+        deps,
+        (i, filename) => {
+          log.debug("Downloading split document", {
+            index: i,
+            filename,
+            total: statusResponse.documents!.length,
+          });
+        }
+      );
+    } catch (downloadError) {
+      // Clean up any partially downloaded files
+      for (const doc of statusResponse.documents) {
+        const partialPath = join(options.outputDir, doc.filename);
+        try {
+          unlinkSync(partialPath);
+        } catch {
+          // File may not exist if download hadn't reached it yet
+        }
+      }
+      throw downloadError;
+    }
+
+    // 4. Optionally delete the original PDF
+    if (options.deleteSourcePdf) {
+      unlinkSync(filePath);
+      log.info("Deleted source PDF after split", { filePath });
+    }
+
+    return {
+      success: true,
+      originalPath: filePath,
+      suggestedFilename: statusResponse.documents[0].filename,
+      destinationPath: options.outputDir,
+      splitOutputPaths: downloadedPaths,
+      splitDocumentCount: statusResponse.documents.length,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log.error("PDF split failed", { filePath, error: errorMessage });
+
+    // Move to failed dir if specified
+    if (options.failedDir) {
+      await moveToFailed(filePath, options.failedDir, logger);
+    }
+
+    return {
+      success: false,
+      originalPath: filePath,
+      suggestedFilename: basename(filePath),
+      error: errorMessage,
+    };
   }
 }
 
@@ -229,19 +395,38 @@ function createFileProcessor(ctx: WatchContext): (filePath: string) => void {
     const task: QueueTask<ProcessFileResult> = {
       id: filePath,
       execute: async () => {
-        const result = await processFile(
-          ctx.api,
-          filePath,
-          {
-            apply: true,
-            outputDir: ctx.outputDir,
-            // When passthrough is enabled, don't let processFile move to failedDir
-            // — we handle the move ourselves below
-            failedDir: ctx.passthrough ? undefined : ctx.failedDir,
-            dryRun: ctx.dryRun,
-          },
-          ctx.logger
-        );
+        // Always capture file identity upfront — file may be deleted by split
+        const fileIdentity = getFileIdentity(filePath);
+
+        const failedDir = ctx.passthrough ? undefined : ctx.failedDir;
+        const useSplit = ctx.splitPdfs && isPdfFile(filePath);
+        let result: ProcessFileResult;
+
+        if (useSplit) {
+          result = await processPdfSplit(
+            ctx.api,
+            filePath,
+            {
+              outputDir: ctx.outputDir,
+              failedDir,
+              dryRun: ctx.dryRun,
+              deleteSourcePdf: ctx.deleteSourcePdf,
+            },
+            ctx.logger
+          );
+        } else {
+          result = await processFile(
+            ctx.api,
+            filePath,
+            {
+              apply: true,
+              outputDir: ctx.outputDir,
+              failedDir,
+              dryRun: ctx.dryRun,
+            },
+            ctx.logger
+          );
+        }
 
         if (result.success) {
           ctx.healthServer?.recordSuccess();
@@ -264,28 +449,44 @@ function createFileProcessor(ctx: WatchContext): (filePath: string) => void {
 
         // Emit NDJSON event if in JSON mode
         if (ctx.jsonMode) {
-          const eventType = result.success
-            ? "file"
-            : passthroughPath
-              ? "passthrough"
-              : "error";
+          if (useSplit && result.success) {
+            const event: WatchEventJson = {
+              type: "split",
+              timestamp: new Date().toISOString(),
+              data: {
+                file: fileIdentity,
+                splitResult: {
+                  outputPaths: result.splitOutputPaths ?? [],
+                  documentCount: result.splitDocumentCount ?? 0,
+                  sourceDeleted: ctx.deleteSourcePdf && !ctx.dryRun,
+                },
+              },
+            };
+            outputNdjson(event);
+          } else {
+            const eventType = result.success
+              ? "file"
+              : passthroughPath
+                ? "passthrough"
+                : "error";
 
-          const event: WatchEventJson = {
-            type: eventType,
-            timestamp: new Date().toISOString(),
-            data: {
-              file: getFileIdentity(filePath),
-              result: result.success ? {
-                suggestedName: result.suggestedFilename,
-                suggestedFolder: result.suggestedFolderPath,
-                applied: !ctx.dryRun,
-                outputPath: result.destinationPath,
-              } : undefined,
-              error: result.error,
-              passthroughPath,
-            },
-          };
-          outputNdjson(event);
+            const event: WatchEventJson = {
+              type: eventType,
+              timestamp: new Date().toISOString(),
+              data: {
+                file: fileIdentity,
+                result: result.success ? {
+                  suggestedName: result.suggestedFilename,
+                  suggestedFolder: result.suggestedFolderPath,
+                  applied: !ctx.dryRun,
+                  outputPath: result.destinationPath,
+                } : undefined,
+                error: result.error,
+                passthroughPath,
+              },
+            };
+            outputNdjson(event);
+          }
         }
 
         return result;
@@ -321,6 +522,8 @@ async function startWatching(
     failedDir: ctx.passthrough ? "(disabled - using passthrough)" : ctx.failedDir,
     passthrough: ctx.passthrough,
     ...(ctx.passthrough && { passthroughDir: ctx.passthroughDir }),
+    splitPdfs: ctx.splitPdfs,
+    ...(ctx.splitPdfs && { deleteSourcePdf: ctx.deleteSourcePdf }),
     patterns: ctx.config.patterns,
     concurrency: ctx.config.concurrency,
     dryRun: ctx.dryRun,
@@ -458,6 +661,8 @@ export function registerWatchCommands(program: Command, api: ApiClient): void {
     .option("--poll-interval <ms>", "Polling interval in milliseconds (default: 500)")
     .option("--passthrough", "Move unprocessable files to output dir untouched (pipeline mode)")
     .option("--passthrough-dir <dir>", "Custom directory for passthrough files (default: output dir)")
+    .option("--split-pdfs", "Split PDF files into separate documents using AI", false)
+    .option("--delete-source-pdf", "Delete source PDF after successful split (requires --split-pdfs)", false)
     .option("-c, --config <path>", "Path to configuration file")
     .addHelpText(
       "after",
@@ -465,8 +670,9 @@ export function registerWatchCommands(program: Command, api: ApiClient): void {
 ${chalk.bold.cyan("How It Works:")}
   1. Watches directory for new/changed files matching patterns
   2. Sends each file to AI for renaming suggestions
-  3. Moves files to output directory with AI-suggested names
-  4. Failed files go to --failed-dir (default: .failed/)
+  3. With ${chalk.yellow("--split-pdfs")}: PDFs are split into separate documents instead
+  4. Output files go to --output-dir with AI-suggested names
+  5. Failed files go to --failed-dir (default: .failed/)
 
 ${chalk.bold.cyan("File Patterns:")}
   Default: ${chalk.yellow("*.pdf *.jpg *.jpeg *.png *.tiff")}
@@ -506,6 +712,14 @@ ${chalk.bold.cyan("Examples:")}
 
   renamed watch /data --poll --poll-interval 1000
       ${chalk.gray("Poll every 1000ms (default: 500ms)")}
+
+${chalk.bold.cyan("PDF Splitting (--split-pdfs):")}
+  Use ${chalk.yellow("--split-pdfs")} to split PDFs into separate documents using AI.
+  Without this flag, PDFs are renamed like any other file.
+  ${chalk.gray("renamed watch ~/scans -o ~/Documents --split-pdfs")}
+  ${chalk.gray("  PDFs → split into separate documents")}
+  ${chalk.gray("  Other files → renamed by AI")}
+  Use ${chalk.yellow("--delete-source-pdf")} to remove the source PDF after split.
 
 ${chalk.bold.cyan("Pipeline Mode (Passthrough):")}
   Use ${chalk.yellow("--passthrough")} to ensure files always move forward.
@@ -650,6 +864,8 @@ ${chalk.bold.cyan("Tips:")}
         jsonMode,
         passthrough,
         passthroughDir: resolvedPassthroughDir,
+        splitPdfs: options.splitPdfs ?? false,
+        deleteSourcePdf: options.deleteSourcePdf ?? false,
       };
 
       // Setup signal handlers for graceful shutdown

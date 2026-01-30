@@ -35,6 +35,10 @@ export interface ProcessFileResult {
   suggestedFolderPath?: string;
   destinationPath?: string;
   error?: string;
+  /** Paths of split output files (only for PDF split operations) */
+  splitOutputPaths?: string[];
+  /** Number of documents created by PDF split */
+  splitDocumentCount?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -108,7 +112,7 @@ async function moveFile(
  * Move a failed file to the failed directory.
  * Creates a timestamped filename to avoid collisions.
  */
-async function moveToFailed(
+export async function moveToFailed(
   filePath: string,
   failedDir: string,
   logger?: Logger

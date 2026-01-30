@@ -103,7 +103,7 @@ export interface PdfSplitResultJson {
 }
 
 export interface WatchEventJson {
-  type: "start" | "file" | "error" | "passthrough" | "stop";
+  type: "start" | "file" | "split" | "error" | "passthrough" | "stop";
   timestamp: string;
   data?: {
     file?: FileIdentity;
@@ -112,6 +112,12 @@ export interface WatchEventJson {
       suggestedFolder?: string;
       applied: boolean;
       outputPath?: string;
+    };
+    /** PDF split result (only for type: "split") */
+    splitResult?: {
+      outputPaths: string[];
+      documentCount: number;
+      sourceDeleted: boolean;
     };
     error?: string;
     passthroughPath?: string;

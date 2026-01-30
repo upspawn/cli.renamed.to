@@ -14,16 +14,31 @@ vi.mock("fs", () => ({
   unlinkSync: (...args: unknown[]) => mockUnlinkSync(...args),
 }));
 
+// Mock pdf-split module
+const mockSplitPdf = vi.fn();
+const mockPollJobStatus = vi.fn();
+const mockDownloadSplitDocuments = vi.fn();
+const mockValidatePdfFilePath = vi.fn();
+vi.mock("./pdf-split.js", () => ({
+  splitPdf: (...args: unknown[]) => mockSplitPdf(...args),
+  pollJobStatus: (...args: unknown[]) => mockPollJobStatus(...args),
+  downloadSplitDocuments: (...args: unknown[]) => mockDownloadSplitDocuments(...args),
+  validateFilePath: (...args: unknown[]) => mockValidatePdfFilePath(...args),
+}));
+
 import {
   matchesPatterns,
   validateDirectory,
   parseConcurrency,
+  isPdfFile,
   createFileHandler,
   clearPendingFiles,
   moveToPassthrough,
+  processPdfSplit,
   type FileHandlerContext,
   type WatchDeps,
 } from "./watch.js";
+import type { ApiClient } from "../lib/api-client.js";
 import type { TimerService } from "../lib/ports/timer.js";
 import type { Logger } from "../lib/logger.js";
 
@@ -413,6 +428,233 @@ describe("watch module", () => {
       };
       expect(options.passthrough).toBe(true);
       expect(options.passthroughDir).toBe("/custom/passthrough");
+    });
+  });
+
+  describe("isPdfFile", () => {
+    it("returns true for .pdf extension", () => {
+      expect(isPdfFile("/path/to/document.pdf")).toBe(true);
+    });
+
+    it("returns true for uppercase .PDF extension", () => {
+      expect(isPdfFile("/path/to/DOCUMENT.PDF")).toBe(true);
+    });
+
+    it("returns true for mixed case .Pdf extension", () => {
+      expect(isPdfFile("/path/to/document.Pdf")).toBe(true);
+    });
+
+    it("returns false for .jpg extension", () => {
+      expect(isPdfFile("/path/to/photo.jpg")).toBe(false);
+    });
+
+    it("returns false for .pdf.bak extension", () => {
+      expect(isPdfFile("/path/to/document.pdf.bak")).toBe(false);
+    });
+
+    it("returns false for file without extension", () => {
+      expect(isPdfFile("/path/to/Makefile")).toBe(false);
+    });
+  });
+
+  describe("processPdfSplit", () => {
+    const createMockApi = () =>
+      ({
+        uploadFileWithFields: vi.fn(),
+        get: vi.fn(),
+      }) as unknown as ApiClient;
+
+    const mockDocuments = [
+      { filename: "invoice-001.pdf", downloadUrl: "https://example.com/1", pages: [1, 2] },
+      { filename: "invoice-002.pdf", downloadUrl: "https://example.com/2", pages: [3, 4] },
+    ];
+
+    beforeEach(() => {
+      mockSplitPdf.mockResolvedValue({
+        jobId: "job-123",
+        statusUrl: "/jobs/job-123",
+        status: "pending",
+      });
+      mockPollJobStatus.mockResolvedValue({
+        jobId: "job-123",
+        status: "completed",
+        documents: mockDocuments,
+      });
+      mockDownloadSplitDocuments.mockResolvedValue([
+        "/output/invoice-001.pdf",
+        "/output/invoice-002.pdf",
+      ]);
+      mockValidatePdfFilePath.mockImplementation(() => {});
+    });
+
+    it("returns success with split output paths", async () => {
+      const api = createMockApi();
+
+      const result = await processPdfSplit(api, "/path/to/batch.pdf", {
+        outputDir: "/output",
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.splitOutputPaths).toEqual([
+        "/output/invoice-001.pdf",
+        "/output/invoice-002.pdf",
+      ]);
+      expect(result.splitDocumentCount).toBe(2);
+      expect(result.suggestedFilename).toBe("invoice-001.pdf");
+      expect(result.destinationPath).toBe("/output");
+    });
+
+    it("calls splitPdf with smart mode", async () => {
+      const api = createMockApi();
+
+      await processPdfSplit(api, "/path/to/batch.pdf", {
+        outputDir: "/output",
+      });
+
+      expect(mockSplitPdf).toHaveBeenCalledWith(api, "/path/to/batch.pdf", { mode: "smart" });
+    });
+
+    it("downloads split documents to output dir", async () => {
+      const api = createMockApi();
+
+      await processPdfSplit(api, "/path/to/batch.pdf", {
+        outputDir: "/output",
+      });
+
+      expect(mockMkdirSync).toHaveBeenCalledWith("/output", { recursive: true });
+      expect(mockDownloadSplitDocuments).toHaveBeenCalledWith(
+        mockDocuments,
+        "/output",
+        expect.any(Object),
+        expect.any(Function)
+      );
+    });
+
+    it("does not delete source PDF by default", async () => {
+      const api = createMockApi();
+
+      await processPdfSplit(api, "/path/to/batch.pdf", {
+        outputDir: "/output",
+      });
+
+      expect(mockUnlinkSync).not.toHaveBeenCalled();
+    });
+
+    it("deletes source PDF when deleteSourcePdf is true", async () => {
+      const api = createMockApi();
+
+      await processPdfSplit(api, "/path/to/batch.pdf", {
+        outputDir: "/output",
+        deleteSourcePdf: true,
+      });
+
+      expect(mockUnlinkSync).toHaveBeenCalledWith("/path/to/batch.pdf");
+    });
+
+    it("skips API call, download and delete in dry-run mode", async () => {
+      const api = createMockApi();
+
+      const result = await processPdfSplit(api, "/path/to/batch.pdf", {
+        outputDir: "/output",
+        deleteSourcePdf: true,
+        dryRun: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.splitOutputPaths).toEqual([]);
+      expect(result.splitDocumentCount).toBe(0);
+      expect(mockSplitPdf).not.toHaveBeenCalled();
+      expect(mockPollJobStatus).not.toHaveBeenCalled();
+      expect(mockDownloadSplitDocuments).not.toHaveBeenCalled();
+      expect(mockUnlinkSync).not.toHaveBeenCalled();
+    });
+
+    it("returns error on API failure", async () => {
+      mockSplitPdf.mockRejectedValue(new Error("Upload failed"));
+      const api = createMockApi();
+
+      const result = await processPdfSplit(api, "/path/to/batch.pdf", {
+        outputDir: "/output",
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Upload failed");
+    });
+
+    it("returns error on poll timeout", async () => {
+      mockPollJobStatus.mockRejectedValue(new Error("Job timed out after 10 minutes"));
+      const api = createMockApi();
+
+      const result = await processPdfSplit(api, "/path/to/batch.pdf", {
+        outputDir: "/output",
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Job timed out after 10 minutes");
+    });
+
+    it("moves to failed dir on error when specified", async () => {
+      mockSplitPdf.mockRejectedValue(new Error("Split failed"));
+      const api = createMockApi();
+
+      const result = await processPdfSplit(api, "/path/to/batch.pdf", {
+        outputDir: "/output",
+        failedDir: "/failed",
+      });
+
+      expect(result.success).toBe(false);
+      expect(mockCopyFileSync).toHaveBeenCalled();
+      expect(mockUnlinkSync).toHaveBeenCalled();
+    });
+
+    it("does not move to failed dir on validation error in dry-run mode", async () => {
+      mockValidatePdfFilePath.mockImplementation(() => {
+        throw new Error("File exceeds 100MB limit");
+      });
+      const api = createMockApi();
+
+      const result = await processPdfSplit(api, "/path/to/huge.pdf", {
+        outputDir: "/output",
+        failedDir: "/failed",
+        dryRun: true,
+      });
+
+      // Validation errors still happen in dry-run (they're cheap and local),
+      // but the file should still be moved to failed dir since it can't be processed
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("100MB");
+    });
+
+    it("handles validation error before API call", async () => {
+      mockValidatePdfFilePath.mockImplementation(() => {
+        throw new Error("File exceeds 100MB limit");
+      });
+      const api = createMockApi();
+
+      const result = await processPdfSplit(api, "/path/to/huge.pdf", {
+        outputDir: "/output",
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("100MB");
+      expect(mockSplitPdf).not.toHaveBeenCalled();
+    });
+
+    it("handles split producing no documents", async () => {
+      mockPollJobStatus.mockResolvedValue({
+        jobId: "job-123",
+        status: "completed",
+        documents: [],
+      });
+      const api = createMockApi();
+
+      const result = await processPdfSplit(api, "/path/to/empty.pdf", {
+        outputDir: "/output",
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.splitOutputPaths).toEqual([]);
+      expect(result.splitDocumentCount).toBe(0);
     });
   });
 

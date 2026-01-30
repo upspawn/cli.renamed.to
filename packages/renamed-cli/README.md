@@ -251,7 +251,7 @@ renamed pdf-split doc.pdf --wait -o ./split-output
 
 ### Watch Mode (Server Automation)
 
-Monitor directories and automatically organize files using AI:
+Monitor directories, auto-rename files, and split PDFs using AI:
 
 ```bash
 renamed watch <directory> [options]
@@ -268,6 +268,8 @@ renamed watch <directory> [options]
 | `--poll-interval <ms>` | Polling interval in ms (default: 500) |
 | `--passthrough` | Move unprocessable files to output dir untouched (pipeline mode) |
 | `--passthrough-dir <dir>` | Custom directory for passthrough files (default: output dir) |
+| `--split-pdfs` | Split PDF files into separate documents using AI |
+| `--delete-source-pdf` | Delete source PDF after successful split (requires `--split-pdfs`) |
 | `-c, --config <path>` | Config file path |
 
 **Examples:**
@@ -288,7 +290,14 @@ renamed watch /data --poll --poll-interval 1000
 # Pipeline mode - always move files forward, even on failure
 renamed watch ~/inbox --output-dir ~/output --passthrough
 renamed watch ~/inbox --output-dir ~/output --passthrough --passthrough-dir ~/unprocessed
+
+# Split PDFs into separate documents
+renamed watch ~/scans --output-dir ~/Documents --split-pdfs
+renamed watch ~/scans --output-dir ~/Documents --split-pdfs --delete-source-pdf
 ```
+
+With `--split-pdfs`, PDF files are split using AI into separate documents.
+Without it, PDFs are renamed like any other file type.
 
 Files are organized into AI-suggested folder structures:
 ```

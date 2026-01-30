@@ -54,6 +54,8 @@ export const ConfigFileSchema = z.object({
       failedDir: z.string().optional(),
       passthrough: z.boolean().optional(),
       passthroughDir: z.string().optional(),
+      splitPdfs: z.boolean().optional(),
+      deleteSourcePdf: z.boolean().optional(),
     })
     .optional(),
   rateLimit: RateLimitSchema.optional(),
