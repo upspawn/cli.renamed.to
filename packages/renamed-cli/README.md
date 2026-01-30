@@ -266,6 +266,8 @@ renamed watch <directory> [options]
 | `--concurrency <n>` | Parallel processing (1-10, default: 2) |
 | `--poll` | Use polling instead of native fs events (for Docker/NFS) |
 | `--poll-interval <ms>` | Polling interval in ms (default: 500) |
+| `--passthrough` | Move unprocessable files to output dir untouched (pipeline mode) |
+| `--passthrough-dir <dir>` | Custom directory for passthrough files (default: output dir) |
 | `-c, --config <path>` | Config file path |
 
 **Examples:**
@@ -282,6 +284,10 @@ renamed watch /var/inbox --output-dir /var/organized --failed-dir /var/failed
 # Docker or NFS mounted volumes (use polling)
 renamed watch /data --output-dir /output --poll
 renamed watch /data --poll --poll-interval 1000
+
+# Pipeline mode - always move files forward, even on failure
+renamed watch ~/inbox --output-dir ~/output --passthrough
+renamed watch ~/inbox --output-dir ~/output --passthrough --passthrough-dir ~/unprocessed
 ```
 
 Files are organized into AI-suggested folder structures:

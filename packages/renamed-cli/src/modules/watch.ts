@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import chokidar, { type FSWatcher } from "chokidar";
-import { resolve, extname } from "path";
-import { statSync, existsSync, mkdirSync } from "fs";
+import { resolve, extname, basename, join } from "path";
+import { statSync, existsSync, mkdirSync, copyFileSync, unlinkSync } from "fs";
 import chalk from "chalk";
 import type { ApiClient } from "../lib/api-client.js";
 import {
@@ -37,6 +37,8 @@ export interface WatchOptions {
   config?: string;
   poll?: boolean;
   pollInterval?: string;
+  passthrough?: boolean;
+  passthroughDir?: string;
 }
 
 export interface WatchContext {
@@ -52,6 +54,8 @@ export interface WatchContext {
   dryRun: boolean;
   isShuttingDown: boolean;
   jsonMode: boolean;
+  passthrough: boolean;
+  passthroughDir: string;
 }
 
 /**
@@ -118,6 +122,49 @@ export function parseConcurrency(value: string): number {
     throw new Error("Concurrency must be between 1 and 10");
   }
   return n;
+}
+
+// ---------------------------------------------------------------------------
+// Passthrough (Pipeline Mode)
+// ---------------------------------------------------------------------------
+
+/**
+ * Move a failed file to the passthrough directory with its original filename.
+ * Unlike moveToFailed, this preserves the original name (no timestamp prefix)
+ * so the file can continue through a pipeline untouched.
+ *
+ * @returns The destination path, or undefined if the move failed.
+ */
+export async function moveToPassthrough(
+  filePath: string,
+  passthroughDir: string,
+  logger?: Logger,
+  dryRun?: boolean
+): Promise<string | undefined> {
+  const filename = basename(filePath);
+  const targetPath = join(passthroughDir, filename);
+
+  if (dryRun) {
+    logger?.info("Dry run - would passthrough", { from: filePath, to: targetPath });
+    return targetPath;
+  }
+
+  try {
+    mkdirSync(passthroughDir, { recursive: true });
+    copyFileSync(filePath, targetPath);
+    unlinkSync(filePath);
+    logger?.warn("File passed through untouched (processing failed)", {
+      from: filePath,
+      to: targetPath,
+    });
+    return targetPath;
+  } catch (err) {
+    logger?.error("Failed to move file to passthrough directory", {
+      filePath,
+      error: (err as Error).message,
+    });
+    return undefined;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -188,7 +235,9 @@ function createFileProcessor(ctx: WatchContext): (filePath: string) => void {
           {
             apply: true,
             outputDir: ctx.outputDir,
-            failedDir: ctx.failedDir,
+            // When passthrough is enabled, don't let processFile move to failedDir
+            // — we handle the move ourselves below
+            failedDir: ctx.passthrough ? undefined : ctx.failedDir,
             dryRun: ctx.dryRun,
           },
           ctx.logger
@@ -200,12 +249,29 @@ function createFileProcessor(ctx: WatchContext): (filePath: string) => void {
           ctx.healthServer?.recordError();
         }
 
+        // Passthrough: move failed files to passthrough dir with original name
+        let passthroughPath: string | undefined;
+        if (!result.success && ctx.passthrough) {
+          passthroughPath = await moveToPassthrough(
+            filePath,
+            ctx.passthroughDir,
+            ctx.logger,
+            ctx.dryRun
+          );
+        }
+
         ctx.healthServer?.updateStats(ctx.queue.getStats());
 
         // Emit NDJSON event if in JSON mode
         if (ctx.jsonMode) {
+          const eventType = result.success
+            ? "file"
+            : passthroughPath
+              ? "passthrough"
+              : "error";
+
           const event: WatchEventJson = {
-            type: result.success ? "file" : "error",
+            type: eventType,
             timestamp: new Date().toISOString(),
             data: {
               file: getFileIdentity(filePath),
@@ -216,6 +282,7 @@ function createFileProcessor(ctx: WatchContext): (filePath: string) => void {
                 outputPath: result.destinationPath,
               } : undefined,
               error: result.error,
+              passthroughPath,
             },
           };
           outputNdjson(event);
@@ -251,7 +318,9 @@ async function startWatching(
   ctx.logger.info("Starting file watcher", {
     watchDir: resolvedWatchDir,
     outputDir: ctx.outputDir,
-    failedDir: ctx.failedDir,
+    failedDir: ctx.passthrough ? "(disabled - using passthrough)" : ctx.failedDir,
+    passthrough: ctx.passthrough,
+    ...(ctx.passthrough && { passthroughDir: ctx.passthroughDir }),
     patterns: ctx.config.patterns,
     concurrency: ctx.config.concurrency,
     dryRun: ctx.dryRun,
@@ -387,6 +456,8 @@ export function registerWatchCommands(program: Command, api: ApiClient): void {
     .option("--concurrency <n>", "Number of files to process in parallel")
     .option("--poll", "Use polling instead of native filesystem events (for Docker/NFS)")
     .option("--poll-interval <ms>", "Polling interval in milliseconds (default: 500)")
+    .option("--passthrough", "Move unprocessable files to output dir untouched (pipeline mode)")
+    .option("--passthrough-dir <dir>", "Custom directory for passthrough files (default: output dir)")
     .option("-c, --config <path>", "Path to configuration file")
     .addHelpText(
       "after",
@@ -436,10 +507,17 @@ ${chalk.bold.cyan("Examples:")}
   renamed watch /data --poll --poll-interval 1000
       ${chalk.gray("Poll every 1000ms (default: 500ms)")}
 
+${chalk.bold.cyan("Pipeline Mode (Passthrough):")}
+  Use ${chalk.yellow("--passthrough")} to ensure files always move forward.
+  Failed files go to output directory with original names.
+  ${chalk.gray("renamed watch ~/inbox -o ~/output --passthrough")}
+  ${chalk.gray("renamed watch ~/inbox -o ~/output --passthrough --passthrough-dir ~/unprocessed")}
+
 ${chalk.bold.cyan("Tips:")}
   • Use ${chalk.yellow("--dry-run")} first to preview behavior
   • Press ${chalk.yellow("Ctrl+C")} to stop gracefully (waits for active jobs)
   • Use ${chalk.yellow("--poll")} in Docker or with network-mounted volumes
+  • Use ${chalk.yellow("--passthrough")} in pipelines to never block on failures
   • Check ${chalk.yellow(".failed/")} directory for problematic files
 `
     )
@@ -503,6 +581,33 @@ ${chalk.bold.cyan("Tips:")}
         return;
       }
 
+      // Resolve passthrough options
+      const passthrough = options.passthrough ?? false;
+      let resolvedPassthroughDir = resolvedOutputDir;
+
+      if (passthrough) {
+        const passthroughDir = options.passthroughDir ?? outputDir;
+        try {
+          resolvedPassthroughDir = validateDirectory(
+            passthroughDir,
+            "Passthrough directory"
+          );
+        } catch (error) {
+          logger.error("Directory validation failed", {
+            error: (error as Error).message,
+          });
+          process.exitCode = 1;
+          return;
+        }
+
+        if (!options.outputDir && !options.passthroughDir) {
+          logger.warn(
+            "Passthrough enabled but no --output-dir or --passthrough-dir specified. " +
+            "Failed files will stay in the watch directory with their original names."
+          );
+        }
+      }
+
       // Create processing queue
       const queue = createQueue<ProcessFileResult>({
         concurrency: config.concurrency,
@@ -543,6 +648,8 @@ ${chalk.bold.cyan("Tips:")}
         dryRun: options.dryRun ?? false,
         isShuttingDown: false,
         jsonMode,
+        passthrough,
+        passthroughDir: resolvedPassthroughDir,
       };
 
       // Setup signal handlers for graceful shutdown

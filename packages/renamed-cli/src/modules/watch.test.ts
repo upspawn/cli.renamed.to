@@ -4,10 +4,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const mockExistsSync = vi.fn();
 const mockMkdirSync = vi.fn();
 const mockStatSync = vi.fn();
+const mockCopyFileSync = vi.fn();
+const mockUnlinkSync = vi.fn();
 vi.mock("fs", () => ({
   existsSync: (...args: unknown[]) => mockExistsSync(...args),
   mkdirSync: (...args: unknown[]) => mockMkdirSync(...args),
   statSync: (...args: unknown[]) => mockStatSync(...args),
+  copyFileSync: (...args: unknown[]) => mockCopyFileSync(...args),
+  unlinkSync: (...args: unknown[]) => mockUnlinkSync(...args),
 }));
 
 import {
@@ -16,6 +20,7 @@ import {
   parseConcurrency,
   createFileHandler,
   clearPendingFiles,
+  moveToPassthrough,
   type FileHandlerContext,
   type WatchDeps,
 } from "./watch.js";
@@ -327,6 +332,87 @@ describe("watch module", () => {
         pollInterval: "1000",
       };
       expect(options.pollInterval).toBe("1000");
+    });
+  });
+
+  describe("moveToPassthrough", () => {
+    const createMockLogger = (): Logger => {
+      const logger: Logger = {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+        child: vi.fn(() => logger),
+      };
+      return logger;
+    };
+
+    it("moves file with original filename (no timestamp prefix)", async () => {
+      const logger = createMockLogger();
+
+      const result = await moveToPassthrough(
+        "/input/invoice.pdf",
+        "/output",
+        logger
+      );
+
+      expect(result).toBe("/output/invoice.pdf");
+      expect(mockMkdirSync).toHaveBeenCalledWith("/output", { recursive: true });
+      expect(mockCopyFileSync).toHaveBeenCalledWith("/input/invoice.pdf", "/output/invoice.pdf");
+      expect(mockUnlinkSync).toHaveBeenCalledWith("/input/invoice.pdf");
+      expect(logger.warn).toHaveBeenCalledWith(
+        "File passed through untouched (processing failed)",
+        expect.objectContaining({ from: "/input/invoice.pdf", to: "/output/invoice.pdf" })
+      );
+    });
+
+    it("returns target path without moving in dry-run mode", async () => {
+      const logger = createMockLogger();
+
+      const result = await moveToPassthrough(
+        "/input/invoice.pdf",
+        "/output",
+        logger,
+        true // dryRun
+      );
+
+      expect(result).toBe("/output/invoice.pdf");
+      expect(mockCopyFileSync).not.toHaveBeenCalled();
+      expect(mockUnlinkSync).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith(
+        "Dry run - would passthrough",
+        expect.any(Object)
+      );
+    });
+
+    it("returns undefined and logs error on failure", async () => {
+      const logger = createMockLogger();
+      mockCopyFileSync.mockImplementationOnce(() => {
+        throw new Error("EACCES: permission denied");
+      });
+
+      const result = await moveToPassthrough(
+        "/input/invoice.pdf",
+        "/output",
+        logger
+      );
+
+      expect(result).toBeUndefined();
+      expect(logger.error).toHaveBeenCalledWith(
+        "Failed to move file to passthrough directory",
+        expect.objectContaining({ filePath: "/input/invoice.pdf" })
+      );
+    });
+  });
+
+  describe("passthrough options", () => {
+    it("accepts --passthrough flag via WatchOptions interface", () => {
+      const options: import("./watch.js").WatchOptions = {
+        passthrough: true,
+        passthroughDir: "/custom/passthrough",
+      };
+      expect(options.passthrough).toBe(true);
+      expect(options.passthroughDir).toBe("/custom/passthrough");
     });
   });
 

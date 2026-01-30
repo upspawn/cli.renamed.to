@@ -52,6 +52,8 @@ export const ConfigFileSchema = z.object({
       patterns: z.array(z.string()).optional(),
       outputDir: z.string().optional(),
       failedDir: z.string().optional(),
+      passthrough: z.boolean().optional(),
+      passthroughDir: z.string().optional(),
     })
     .optional(),
   rateLimit: RateLimitSchema.optional(),
