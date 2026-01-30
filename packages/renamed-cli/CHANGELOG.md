@@ -1,5 +1,11 @@
 # @renamed-to/cli
 
+## 1.2.0
+
+### Minor Changes
+
+- e139e3b: Added `--poll` and `--poll-interval` options to the `watch` command for environments where native filesystem events don't work (Docker bind mounts, NFS, CIFS)
+
 ## 1.1.2
 
 ### Patch Changes
