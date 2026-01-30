@@ -1,6 +1,6 @@
 title: renamed.to CLI
 description: AI-powered file renaming, document extraction, and PDF splitting
-url: https://upspawn.github.io
+url: https://renamed-to.github.io
 baseurl: /cli.renamed.to
 remote_theme: pages-themes/cayman@v0.2.0
 plugins:
@@ -17,4 +17,4 @@ nav:
   - title: API Reference
     url: https://renamed.to/docs/api-docs
   - title: GitHub
-    url: https://github.com/upspawn/cli.renamed.to
+    url: https://github.com/renamed-to/cli.renamed.to

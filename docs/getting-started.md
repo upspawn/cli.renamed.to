@@ -168,7 +168,7 @@ System Information:
 - Set up [watch mode](./commands#watch-mode) for automatic file organization
 - Configure [persistent settings](./commands#configuration-file-schema) via YAML config
 - Read the [API documentation](https://www.renamed.to/docs/api-docs)
-- [Report issues](https://github.com/upspawn/cli.renamed.to/issues) on GitHub
+- [Report issues](https://github.com/renamed-to/cli.renamed.to/issues) on GitHub
 
 ---
 

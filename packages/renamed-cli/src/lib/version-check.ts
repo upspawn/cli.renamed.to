@@ -110,7 +110,7 @@ export function getUpdateCommand(method: InstallMethod): string {
     case "homebrew":
       return "brew upgrade renamed";
     case "binary":
-      return "Download from https://github.com/upspawn/cli.renamed.to/releases";
+      return "Download from https://github.com/renamed-to/cli.renamed.to/releases";
     default:
       return "npm update -g @renamed-to/cli";
   }

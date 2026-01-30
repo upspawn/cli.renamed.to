@@ -118,8 +118,8 @@ renamed watch ~/incoming -o ~/organized
 - [Getting Started Guide](./getting-started)
 - [Command Reference](./commands)
 - [API Documentation](https://www.renamed.to/docs/api-docs)
-- [GitHub Repository](https://github.com/upspawn/cli.renamed.to)
-- [Report Issues](https://github.com/upspawn/cli.renamed.to/issues)
+- [GitHub Repository](https://github.com/renamed-to/cli.renamed.to)
+- [Report Issues](https://github.com/renamed-to/cli.renamed.to/issues)
 
 ---
 

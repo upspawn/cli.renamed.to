@@ -409,7 +409,7 @@ Maximum file size: 100MB for PDF split, 25MB for other operations.
 
 ```bash
 # Clone and install
-git clone https://github.com/upspawn/cli.renamed.to.git
+git clone https://github.com/renamed-to/cli.renamed.to.git
 cd cli.renamed.to
 pnpm install
 
