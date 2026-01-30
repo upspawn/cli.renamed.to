@@ -305,4 +305,6 @@ describe("file-processor", () => {
       expect(result.error).toBe("Permission denied");
     });
   });
+
 });
+
