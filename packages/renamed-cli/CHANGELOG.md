@@ -1,5 +1,14 @@
 # @renamed-to/cli
 
+## 1.3.0
+
+### Minor Changes
+
+- d762eda: Added `--split-pdfs` option to watch command for automatic PDF splitting using AI
+  Added `--delete-source-pdf` option to remove original PDF after successful split
+  Added `--passthrough` mode to forward unprocessable files to output directory untouched
+  Added `--passthrough-dir` option for custom passthrough destination
+
 ## 1.2.0
 
 ### Minor Changes
