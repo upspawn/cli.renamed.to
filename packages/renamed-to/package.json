@@ -1,6 +1,6 @@
 {
   "name": "renamed-to",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Alias package for @renamed-to/cli - AI-powered file renaming, PDF extraction, and document splitting",
   "private": false,
   "type": "module",
