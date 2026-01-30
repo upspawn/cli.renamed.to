@@ -264,6 +264,8 @@ renamed watch <directory> [options]
 | `-f, --failed-dir <dir>` | Directory for files that fail processing |
 | `-n, --dry-run` | Preview without moving files |
 | `--concurrency <n>` | Parallel processing (1-10, default: 2) |
+| `--poll` | Use polling instead of native fs events (for Docker/NFS) |
+| `--poll-interval <ms>` | Polling interval in ms (default: 500) |
 | `-c, --config <path>` | Config file path |
 
 **Examples:**
@@ -276,6 +278,10 @@ renamed watch ~/incoming --output-dir ~/organized --dry-run
 
 # With failed directory
 renamed watch /var/inbox --output-dir /var/organized --failed-dir /var/failed
+
+# Docker or NFS mounted volumes (use polling)
+renamed watch /data --output-dir /output --poll
+renamed watch /data --poll --poll-interval 1000
 ```
 
 Files are organized into AI-suggested folder structures:

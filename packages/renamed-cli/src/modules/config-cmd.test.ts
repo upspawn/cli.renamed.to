@@ -226,6 +226,8 @@ describe("config-cmd", () => {
           logJson: false,
           healthEnabled: true,
           healthSocketPath: "/tmp/renamed-health.sock",
+          usePolling: false,
+          pollIntervalMs: 500,
         },
         sources: ["/home/user/.config/renamed/config.yaml"],
       });
@@ -255,6 +257,8 @@ describe("config-cmd", () => {
           logJson: false,
           healthEnabled: true,
           healthSocketPath: "/tmp/renamed-health.sock",
+          usePolling: false,
+          pollIntervalMs: 500,
         },
         sources: [],
       });
@@ -291,6 +295,8 @@ describe("config-cmd", () => {
           logJson: false,
           healthEnabled: true,
           healthSocketPath: "/tmp/renamed-health.sock",
+          usePolling: false,
+          pollIntervalMs: 500,
         },
         sources: [],
       });
