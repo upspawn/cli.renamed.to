@@ -103,7 +103,7 @@ export interface PdfSplitResultJson {
 }
 
 export interface WatchEventJson {
-  type: "start" | "file" | "error" | "stop";
+  type: "start" | "file" | "error" | "passthrough" | "stop";
   timestamp: string;
   data?: {
     file?: FileIdentity;
@@ -114,6 +114,7 @@ export interface WatchEventJson {
       outputPath?: string;
     };
     error?: string;
+    passthroughPath?: string;
   };
 }
 
