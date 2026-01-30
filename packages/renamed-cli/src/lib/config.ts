@@ -27,6 +27,8 @@ export const CONFIG_DEFAULTS = {
   retryDelayMs: 5000,
   healthSocketPath: "/tmp/renamed-health.sock",
   patterns: ["*.pdf", "*.jpg", "*.jpeg", "*.png", "*.tiff", "*.tif"],
+  usePolling: false,
+  pollIntervalMs: 500,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -39,6 +41,8 @@ const RateLimitSchema = z.object({
   debounceMs: z.number().int().min(100).max(60000).optional(),
   retryAttempts: z.number().int().min(0).max(10).optional(),
   retryDelayMs: z.number().int().min(1000).max(300000).optional(),
+  usePolling: z.boolean().optional(),
+  pollIntervalMs: z.number().int().min(100).max(10000).optional(),
 });
 
 /** Complete configuration file schema */
@@ -79,6 +83,8 @@ export interface ResolvedConfig {
   patterns: string[];
   logLevel: "debug" | "info" | "warn" | "error";
   logJson: boolean;
+  usePolling: boolean;
+  pollIntervalMs: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +165,12 @@ function applyConfigFile(target: ResolvedConfig, source: ConfigFile): void {
   if (source.logging?.json !== undefined) {
     target.logJson = source.logging.json;
   }
+  if (source.rateLimit?.usePolling !== undefined) {
+    target.usePolling = source.rateLimit.usePolling;
+  }
+  if (source.rateLimit?.pollIntervalMs !== undefined) {
+    target.pollIntervalMs = source.rateLimit.pollIntervalMs;
+  }
 }
 
 /**
@@ -190,6 +202,8 @@ export function resolveConfig(
     patterns: [...CONFIG_DEFAULTS.patterns],
     logLevel: "info",
     logJson: false,
+    usePolling: CONFIG_DEFAULTS.usePolling,
+    pollIntervalMs: CONFIG_DEFAULTS.pollIntervalMs,
   };
 
   // Apply system config (lowest precedence after defaults)

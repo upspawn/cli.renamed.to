@@ -35,6 +35,8 @@ export interface WatchOptions {
   dryRun?: boolean;
   concurrency?: string;
   config?: string;
+  poll?: boolean;
+  pollInterval?: string;
 }
 
 export interface WatchContext {
@@ -268,6 +270,8 @@ async function startWatching(
       /(^|[/\\])\../, // Ignore dotfiles
       "**/node_modules/**",
     ],
+    usePolling: ctx.config.usePolling || undefined,
+    interval: ctx.config.usePolling ? ctx.config.pollIntervalMs : undefined,
   });
 
   ctx.watcher.on("add", handler);
@@ -381,6 +385,8 @@ export function registerWatchCommands(program: Command, api: ApiClient): void {
     )
     .option("-n, --dry-run", "Preview actions without moving files", false)
     .option("--concurrency <n>", "Number of files to process in parallel")
+    .option("--poll", "Use polling instead of native filesystem events (for Docker/NFS)")
+    .option("--poll-interval <ms>", "Polling interval in milliseconds (default: 500)")
     .option("-c, --config <path>", "Path to configuration file")
     .addHelpText(
       "after",
@@ -424,9 +430,16 @@ ${chalk.bold.cyan("Examples:")}
   renamed watch ~/inbox --json
       ${chalk.gray("Stream NDJSON events for scripting")}
 
+  renamed watch /data --poll
+      ${chalk.gray("Use polling for Docker/NFS mounted volumes")}
+
+  renamed watch /data --poll --poll-interval 1000
+      ${chalk.gray("Poll every 1000ms (default: 500ms)")}
+
 ${chalk.bold.cyan("Tips:")}
   • Use ${chalk.yellow("--dry-run")} first to preview behavior
   • Press ${chalk.yellow("Ctrl+C")} to stop gracefully (waits for active jobs)
+  • Use ${chalk.yellow("--poll")} in Docker or with network-mounted volumes
   • Check ${chalk.yellow(".failed/")} directory for problematic files
 `
     )
@@ -446,6 +459,20 @@ ${chalk.bold.cyan("Tips:")}
           process.exitCode = 1;
           return;
         }
+      }
+
+      // Apply polling overrides
+      if (options.poll) {
+        config.usePolling = true;
+      }
+      if (options.pollInterval) {
+        const interval = parseInt(options.pollInterval, 10);
+        if (isNaN(interval) || interval < 100 || interval > 10000) {
+          console.error(chalk.red("Poll interval must be between 100 and 10000 ms"));
+          process.exitCode = 1;
+          return;
+        }
+        config.pollIntervalMs = interval;
       }
 
       // Create logger

@@ -15,6 +15,8 @@ export interface FileWatcherOptions {
     pollInterval?: number;
   };
   ignored?: (string | RegExp)[];
+  usePolling?: boolean;
+  interval?: number;
 }
 
 export interface FileWatcherFactory {

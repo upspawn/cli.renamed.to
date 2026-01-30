@@ -11,6 +11,8 @@ export const chokidarWatcherFactory: FileWatcherFactory = {
       ignoreInitial: options.ignoreInitial,
       awaitWriteFinish: options.awaitWriteFinish,
       ignored: options.ignored,
+      usePolling: options.usePolling,
+      interval: options.interval,
     });
 
     return {

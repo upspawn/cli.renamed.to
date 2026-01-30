@@ -311,6 +311,25 @@ describe("watch module", () => {
     });
   });
 
+  describe("polling options", () => {
+    it("accepts --poll flag via WatchOptions interface", () => {
+      // WatchOptions now includes poll and pollInterval
+      const options: import("./watch.js").WatchOptions = {
+        poll: true,
+        pollInterval: "500",
+      };
+      expect(options.poll).toBe(true);
+      expect(options.pollInterval).toBe("500");
+    });
+
+    it("accepts --poll-interval as string", () => {
+      const options: import("./watch.js").WatchOptions = {
+        pollInterval: "1000",
+      };
+      expect(options.pollInterval).toBe("1000");
+    });
+  });
+
   describe("clearPendingFiles", () => {
     it("clears all pending timeouts", () => {
       const clearTimeoutMock = vi.fn();

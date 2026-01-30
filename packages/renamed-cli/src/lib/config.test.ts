@@ -80,6 +80,31 @@ describe("config", () => {
       expect(config.healthSocketPath).toBe("/custom/path.sock");
     });
 
+    it("returns polling defaults when no config provided", () => {
+      const config = resolveConfig();
+
+      expect(config.usePolling).toBe(false);
+      expect(config.pollIntervalMs).toBe(500);
+    });
+
+    it("applies polling settings from config", () => {
+      const userConfig = { rateLimit: { usePolling: true, pollIntervalMs: 1000 } };
+
+      const config = resolveConfig({}, userConfig);
+
+      expect(config.usePolling).toBe(true);
+      expect(config.pollIntervalMs).toBe(1000);
+    });
+
+    it("CLI polling options override config", () => {
+      const userConfig = { rateLimit: { usePolling: false, pollIntervalMs: 1000 } };
+
+      const config = resolveConfig({ usePolling: true, pollIntervalMs: 2000 }, userConfig);
+
+      expect(config.usePolling).toBe(true);
+      expect(config.pollIntervalMs).toBe(2000);
+    });
+
     it("applies watch patterns from config", () => {
       const userConfig = { watch: { patterns: ["*.doc", "*.txt"] } };
 
@@ -130,6 +155,36 @@ describe("config", () => {
     it("rejects invalid debounceMs (too low)", () => {
       const input = {
         rateLimit: { debounceMs: 50 },
+      };
+
+      const result = ConfigFileSchema.safeParse(input);
+
+      expect(result.success).toBe(false);
+    });
+
+    it("accepts valid polling config", () => {
+      const input = {
+        rateLimit: { usePolling: true, pollIntervalMs: 500 },
+      };
+
+      const result = ConfigFileSchema.safeParse(input);
+
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects pollIntervalMs below minimum", () => {
+      const input = {
+        rateLimit: { pollIntervalMs: 50 },
+      };
+
+      const result = ConfigFileSchema.safeParse(input);
+
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects pollIntervalMs above maximum", () => {
+      const input = {
+        rateLimit: { pollIntervalMs: 20000 },
       };
 
       const result = ConfigFileSchema.safeParse(input);
