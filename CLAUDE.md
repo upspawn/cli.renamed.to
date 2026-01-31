@@ -178,6 +178,16 @@ Maintained via changesets (see Release Workflow below)
 
 This project uses [Changesets](https://github.com/changesets/changesets) for versioning and GitHub Actions for automated publishing. **Never publish locally** - all releases go through CI/CD.
 
+### Key Rule: Bundle Changesets with Feature PRs
+
+**Always include the changeset in the same PR as the code change.** Never create standalone `chore/` branches just for changesets or version bumps. The changeset file is just a markdown file in `.changeset/` — it doesn't trigger anything until it lands on `main`. So it should travel with the feature, not in a separate PR.
+
+- Feature adds a new flag? Include the changeset in that PR.
+- Bug fix? Include the changeset in that PR.
+- Version alignment or config change? Include it in the PR that introduced the need.
+
+PRs that only contain a changeset or version bump indicate a workflow problem — the changeset should have been in the original feature PR.
+
 ### How It Works
 
 1. When PRs with changesets are merged to `main`, GitHub Actions automatically creates/updates a **Release PR** titled "Version Packages"
@@ -186,7 +196,7 @@ This project uses [Changesets](https://github.com/changesets/changesets) for ver
 
 ### Step-by-Step Release Process
 
-#### 1. Create a changeset with your changes
+#### 1. Create a changeset on your feature branch
 ```bash
 npx changeset
 # Select: @renamed-to/cli
@@ -195,7 +205,7 @@ npx changeset
 ```
 This creates a file like `.changeset/fuzzy-lions-dance.md`
 
-#### 2. Commit everything together
+#### 2. Commit everything together (code + changeset)
 ```bash
 git add .
 git commit -m "feat: your feature description"
@@ -206,6 +216,8 @@ git commit -m "feat: your feature description"
 git push origin your-feature-branch
 # Create PR on GitHub, get it reviewed and merged
 ```
+
+The PR should contain both the code changes and the `.changeset/*.md` file.
 
 #### 4. Wait for Release PR (automatic)
 After your PR merges to `main`, GitHub Actions will:
@@ -221,9 +233,9 @@ When ready to release, merge the "Version Packages" PR. GitHub Actions will:
 
 ### Quick Reference
 ```bash
-# Development workflow:
+# Development workflow (changeset is part of the feature branch):
 npx changeset                    # Create changeset
-git add . && git commit          # Commit with changeset
+git add . && git commit          # Commit code + changeset together
 git push && gh pr create         # Create PR
 
 # After PR merges: wait for "Version Packages" PR, then merge it to release
@@ -262,6 +274,8 @@ Before merging the "Version Packages" PR:
 - Verify npm package permissions
 
 ## PR Workflow
+
+Branch protection is enabled on `main` — all changes must go through a PR. Never commit directly to `main`.
 
 ### Before Submitting
 1. Run `pnpm typecheck` and `pnpm test`
